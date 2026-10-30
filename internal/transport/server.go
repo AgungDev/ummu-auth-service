@@ -15,8 +15,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 type Server struct {
@@ -157,10 +155,6 @@ func (s *Server) initRoutes() {
 }
 
 // Run starts the server
-func (s *Server) RegisterSwaggerRoutes() {
-	s.engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-}
-
 func (s *Server) Run() {
 	s.initRoutes()
 	s.logger.Info("", "", "", "service started", slog.String("port", s.cfg.AppConfig.Port))

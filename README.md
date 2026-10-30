@@ -181,45 +181,37 @@ SIG_KEY_ALGO=RS256
 * `docker-compose.yml` untuk dev: postgres, migration, auth_service
 * Gunakan secrets untuk private key dan client secrets
 
----
+### Menjalankan mode development tanpa build image aplikasi
 
-## Swagger / OpenAPI Documentation
+Mode ini menjalankan PostgreSQL di Docker dan menjalankan aplikasi Go dari source
+yang di-mount ke container. Air akan build ulang dan restart aplikasi ketika file
+`.go` disimpan. Docker tetap perlu mengunduh image Go dan PostgreSQL saat pertama
+kali dijalankan, tetapi tidak perlu menjalankan `docker build` untuk aplikasi.
 
-* Install Swagger CLI:
+1. Salin `.env.example` menjadi `.env`, lalu sesuaikan konfigurasi database:
 
-```bash
-go install github.com/swaggo/swag/cmd/swag@latest
-```
+   ```powershell
+   Copy-Item .env.example .env
+   ```
 
-* Install Gin Swagger packages:
+2. Buat key JWT di root repository (membutuhkan OpenSSL):
 
-```bash
-go get github.com/swaggo/gin-swagger github.com/swaggo/files
-```
+   ```powershell
+   openssl genrsa -out jwt_private.pem 2048
+   openssl rsa -in jwt_private.pem -pubout -out jwt_public.pem
+   ```
 
-* Generate Swagger docs:
+3. Jalankan database dan aplikasi development:
 
-```bash
-make swagger
-```
+   ```powershell
+   docker compose --profile dev up db auth_service_dev
+   ```
 
-* On Windows PowerShell, use:
+   Perubahan file `.go` akan memicu restart otomatis; hentikan dengan `Ctrl+C`.
 
-```powershell
-.\swagger.ps1
-```
-
-* Swagger UI URL:
-
-```text
-http://localhost:9001/swagger/index.html
-```
-
-* Swagger route:
-
-```text
-/swagger/*any
-```
+Service `auth_service` yang memakai Dockerfile tetap tersedia untuk menjalankan
+mode biasa. Jangan jalankan kedua service aplikasi bersamaan karena keduanya
+menggunakan port yang sama.
 
 ---
 
@@ -281,4 +273,3 @@ curl -X POST http://localhost:8080/oauth/token \
 * `gorm.io/gorm`
 * `github.com/golang-jwt/jwt/v5`
 * `github.com/alexedwards/argon2id` (atau `bcrypt`)
-
