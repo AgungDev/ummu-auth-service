@@ -2,7 +2,7 @@ package usecases
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
 	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
@@ -21,16 +21,23 @@ func NewRoleUsecase(roleRepo repositories.RoleRepositoryInterface) RoleUsecaseIn
 
 // Create creates a new role
 func (uc *roleUsecase) Create(ctx context.Context, req dto.RoleRequest) (*domain.Role, error) {
-	// Check if role already exists
-	existingRole, err := uc.roleRepo.FindByName(ctx, req.Name)
-	if err != nil {
-		return nil, err
-	}
-	if existingRole != nil {
-		return nil, errors.New("role already exists")
+	for _, lookup := range []struct {
+		value string
+		find  func(context.Context, string) (*domain.Role, error)
+		label string
+	}{
+		{req.Code, uc.roleRepo.FindByCode, "role code"},
+		{req.Name, uc.roleRepo.FindByName, "role name"},
+	} {
+		existingRole, err := lookup.find(ctx, lookup.value)
+		if err != nil {
+			return nil, err
+		}
+		if existingRole != nil {
+			return nil, fmt.Errorf("%w: %s already exists", domain.ErrConflict, lookup.label)
+		}
 	}
 
-	// Create role
 	role := &domain.Role{
 		Code:        req.Code,
 		Name:        req.Name,
@@ -61,7 +68,32 @@ func (uc *roleUsecase) GetAll(ctx context.Context) ([]domain.Role, error) {
 
 // Update updates role information
 func (uc *roleUsecase) Update(ctx context.Context, id uuid.UUID, req dto.RoleRequest) error {
-	role := &domain.Role{
+	role, err := uc.roleRepo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if role == nil {
+		return domain.ErrNotFound
+	}
+
+	for _, lookup := range []struct {
+		value string
+		find  func(context.Context, string) (*domain.Role, error)
+		label string
+	}{
+		{req.Code, uc.roleRepo.FindByCode, "role code"},
+		{req.Name, uc.roleRepo.FindByName, "role name"},
+	} {
+		existingRole, err := lookup.find(ctx, lookup.value)
+		if err != nil {
+			return err
+		}
+		if existingRole != nil && existingRole.ID != id {
+			return fmt.Errorf("%w: %s already exists", domain.ErrConflict, lookup.label)
+		}
+	}
+
+	role = &domain.Role{
 		Code:        req.Code,
 		Name:        req.Name,
 		Description: req.Description,
@@ -77,6 +109,10 @@ func (uc *roleUsecase) Delete(ctx context.Context, id uuid.UUID) error {
 // AssignPermissions assigns permissions to a role
 func (uc *roleUsecase) AssignPermissions(ctx context.Context, roleID uuid.UUID, permissionIDs []uuid.UUID) error {
 	return uc.roleRepo.AssignPermissions(ctx, roleID, permissionIDs)
+}
+
+func (uc *roleUsecase) ReplacePermissions(ctx context.Context, roleID uuid.UUID, permissionIDs []uuid.UUID) error {
+	return uc.roleRepo.ReplacePermissions(ctx, roleID, permissionIDs)
 }
 
 // GetPermissionsByRoleID retrieves permissions assigned to a role

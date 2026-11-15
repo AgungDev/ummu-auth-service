@@ -1,11 +1,15 @@
 package http
 
 import (
+	"errors"
+	"fmt"
+	"net/http"
+
+	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
 	middleware "auth_service/internal/transport/http/middleware_http"
 	"auth_service/internal/usecases"
 	loggerpkg "auth_service/pkg/logger"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,9 +35,11 @@ func (c *userController) Route(rg *gin.RouterGroup) {
 		userGroup.PUT("/:id", c.Update)
 		userGroup.DELETE("/:id", c.Delete)
 		userGroup.POST("/:id/roles", c.AssignRoles)
+		userGroup.PUT("/:id/roles", c.ReplaceRoles)
 		userGroup.GET("/:id/roles", c.GetRoles)
 		userGroup.DELETE("/:id/roles/:roleId", c.RemoveRole)
 		userGroup.POST("/:id/permissions", c.AssignPermissions)
+		userGroup.PUT("/:id/permissions", c.ReplacePermissions)
 		userGroup.GET("/:id/permissions", c.GetPermissions)
 		userGroup.DELETE("/:id/permissions/:permissionId", c.RemovePermission)
 	}
@@ -78,7 +84,7 @@ func (c *userController) GetAll(ctx *gin.Context) {
 		return
 	}
 
-	var responses []dto.UserResponse
+	responses := make([]dto.UserResponse, 0, len(users))
 	for _, user := range users {
 		responses = append(responses, dto.UserResponse{
 			ID:       user.ID.String(),
@@ -195,11 +201,45 @@ func (c *userController) AssignRoles(ctx *gin.Context) {
 
 	if err := c.userUsecase.AssignRoles(ctx.Request.Context(), userID, roleIDs); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "assign roles failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			JSONError(ctx, http.StatusNotFound, "user or role not found")
+			return
+		}
 		JSONError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	JSONOK(ctx, "roles assigned", nil)
+}
+
+func (c *userController) ReplaceRoles(ctx *gin.Context) {
+	correlationID := middleware.GetCorrelationID(ctx)
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		JSONError(ctx, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	var req dto.RoleReplacementRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		JSONError(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+	roleIDs, err := parseUUIDs(*req.RoleIDs, "role")
+	if err != nil {
+		JSONError(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := c.userUsecase.ReplaceRoles(ctx.Request.Context(), userID, roleIDs); err != nil {
+		c.logger.Error(correlationID, "", "anonymous", "replace user roles failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			JSONError(ctx, http.StatusNotFound, "user or role not found")
+			return
+		}
+		JSONError(ctx, http.StatusInternalServerError, "failed to replace user roles")
+		return
+	}
+	JSONOK(ctx, "roles replaced", nil)
 }
 
 func (c *userController) GetRoles(ctx *gin.Context) {
@@ -215,11 +255,15 @@ func (c *userController) GetRoles(ctx *gin.Context) {
 	roles, err := c.userUsecase.GetRolesByUserID(ctx.Request.Context(), userID)
 	if err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "get user roles failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			JSONError(ctx, http.StatusNotFound, "user not found")
+			return
+		}
 		JSONError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	var resp []dto.RoleResponse
+	resp := make([]dto.RoleResponse, 0, len(roles))
 	for _, role := range roles {
 		resp = append(resp, dto.RoleResponse{
 			ID:          role.ID.String(),
@@ -250,6 +294,10 @@ func (c *userController) RemoveRole(ctx *gin.Context) {
 
 	if err := c.userUsecase.RemoveRole(ctx.Request.Context(), userID, roleID); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "remove role failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			JSONError(ctx, http.StatusNotFound, "user role assignment not found")
+			return
+		}
 		JSONError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -286,11 +334,45 @@ func (c *userController) AssignPermissions(ctx *gin.Context) {
 
 	if err := c.userUsecase.AssignPermissions(ctx.Request.Context(), userID, permissionIDs); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "assign permissions failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			JSONError(ctx, http.StatusNotFound, "user or permission not found")
+			return
+		}
 		JSONError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	JSONOK(ctx, "permissions assigned", nil)
+}
+
+func (c *userController) ReplacePermissions(ctx *gin.Context) {
+	correlationID := middleware.GetCorrelationID(ctx)
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		JSONError(ctx, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	var req dto.PermissionReplacementRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		JSONError(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+	permissionIDs, err := parseUUIDs(*req.PermissionIDs, "permission")
+	if err != nil {
+		JSONError(ctx, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := c.userUsecase.ReplacePermissions(ctx.Request.Context(), userID, permissionIDs); err != nil {
+		c.logger.Error(correlationID, "", "anonymous", "replace user permissions failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			JSONError(ctx, http.StatusNotFound, "user or permission not found")
+			return
+		}
+		JSONError(ctx, http.StatusInternalServerError, "failed to replace user permissions")
+		return
+	}
+	JSONOK(ctx, "permissions replaced", nil)
 }
 
 func (c *userController) GetPermissions(ctx *gin.Context) {
@@ -306,11 +388,15 @@ func (c *userController) GetPermissions(ctx *gin.Context) {
 	permissions, err := c.userUsecase.GetPermissions(ctx.Request.Context(), userID)
 	if err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "get user permissions failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			JSONError(ctx, http.StatusNotFound, "user not found")
+			return
+		}
 		JSONError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	var resp []dto.PermissionResponse
+	resp := make([]dto.PermissionResponse, 0, len(permissions))
 	for _, permission := range permissions {
 		resp = append(resp, dto.PermissionResponse{
 			ID:          permission.ID.String(),
@@ -341,9 +427,25 @@ func (c *userController) RemovePermission(ctx *gin.Context) {
 
 	if err := c.userUsecase.RemovePermission(ctx.Request.Context(), userID, permissionID); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "remove permission failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			JSONError(ctx, http.StatusNotFound, "user permission assignment not found")
+			return
+		}
 		JSONError(ctx, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	JSONOK(ctx, "permission removed", nil)
+}
+
+func parseUUIDs(values []string, resource string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(values))
+	for _, value := range values {
+		id, err := uuid.Parse(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s id: %q", resource, value)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }

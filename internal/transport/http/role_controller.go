@@ -1,11 +1,14 @@
 package http
 
 import (
+	"errors"
+	"net/http"
+
+	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
 	middleware "auth_service/internal/transport/http/middleware_http"
 	"auth_service/internal/usecases"
 	loggerpkg "auth_service/pkg/logger"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,6 +34,7 @@ func (c *roleController) Route(rg *gin.RouterGroup) {
 		roleGroup.PUT("/:id", c.Update)
 		roleGroup.DELETE("/:id", c.Delete)
 		roleGroup.POST("/:id/permissions", c.AssignPermissions)
+		roleGroup.PUT("/:id/permissions", c.ReplacePermissions)
 		roleGroup.GET("/:id/permissions", c.GetPermissions)
 		roleGroup.DELETE("/:id/permissions/:permissionId", c.RemovePermission)
 	}
@@ -51,6 +55,10 @@ func (c *roleController) Create(ctx *gin.Context) {
 	role, err := c.roleUsecase.Create(ctx.Request.Context(), req)
 	if err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "role create failed: "+err.Error())
+		if errors.Is(err, domain.ErrConflict) {
+			ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -79,7 +87,12 @@ func (c *roleController) GetByID(ctx *gin.Context) {
 	}
 
 	role, err := c.roleUsecase.GetByID(ctx.Request.Context(), roleID)
-	if err != nil || role == nil {
+	if err != nil {
+		c.logger.Error(correlationID, "", "anonymous", "role lookup failed: "+err.Error())
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve role"})
+		return
+	}
+	if role == nil {
 		c.logger.Warn(correlationID, "", "anonymous", "role not found")
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
 		return
@@ -109,7 +122,7 @@ func (c *roleController) GetAll(ctx *gin.Context) {
 		return
 	}
 
-	var responses []dto.RoleResponse
+	responses := make([]dto.RoleResponse, 0, len(roles))
 	for _, role := range roles {
 		responses = append(responses, dto.RoleResponse{
 			ID:          role.ID.String(),
@@ -143,6 +156,14 @@ func (c *roleController) Update(ctx *gin.Context) {
 
 	if err := c.roleUsecase.Update(ctx.Request.Context(), roleID, req); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "role update failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
+			return
+		}
+		if errors.Is(err, domain.ErrConflict) {
+			ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -164,6 +185,10 @@ func (c *roleController) Delete(ctx *gin.Context) {
 
 	if err := c.roleUsecase.Delete(ctx.Request.Context(), roleID); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "role delete failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -189,23 +214,54 @@ func (c *roleController) AssignPermissions(ctx *gin.Context) {
 		return
 	}
 
-	permissionIDs := make([]uuid.UUID, 0, len(req.PermissionIDs))
-	for _, permissionID := range req.PermissionIDs {
-		parsed, err := uuid.Parse(permissionID)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid permission id"})
-			return
-		}
-		permissionIDs = append(permissionIDs, parsed)
+	permissionIDs, err := parseUUIDs(req.PermissionIDs, "permission")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	if err := c.roleUsecase.AssignPermissions(ctx.Request.Context(), roleID, permissionIDs); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "assign role permissions failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "role or permission not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Role permissions assigned successfully"})
+}
+
+func (c *roleController) ReplacePermissions(ctx *gin.Context) {
+	correlationID := middleware.GetCorrelationID(ctx)
+	roleID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid role id"})
+		return
+	}
+
+	var req dto.PermissionReplacementRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	permissionIDs, err := parseUUIDs(*req.PermissionIDs, "permission")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := c.roleUsecase.ReplacePermissions(ctx.Request.Context(), roleID, permissionIDs); err != nil {
+		c.logger.Error(correlationID, "", "anonymous", "replace role permissions failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "role or permission not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to replace role permissions"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "Role permissions replaced successfully"})
 }
 
 func (c *roleController) GetPermissions(ctx *gin.Context) {
@@ -221,11 +277,15 @@ func (c *roleController) GetPermissions(ctx *gin.Context) {
 	permissions, err := c.roleUsecase.GetPermissionsByRoleID(ctx.Request.Context(), roleID)
 	if err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "get role permissions failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	var resp []dto.PermissionResponse
+	resp := make([]dto.PermissionResponse, 0, len(permissions))
 	for _, permission := range permissions {
 		resp = append(resp, dto.PermissionResponse{
 			ID:          permission.ID.String(),
@@ -256,6 +316,10 @@ func (c *roleController) RemovePermission(ctx *gin.Context) {
 
 	if err := c.roleUsecase.RemovePermission(ctx.Request.Context(), roleID, permissionID); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "remove role permission failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "role permission assignment not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

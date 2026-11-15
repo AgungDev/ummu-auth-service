@@ -35,6 +35,17 @@ func (r *roleRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Ro
 	return &role, nil
 }
 
+func (r *roleRepository) FindByCode(ctx context.Context, code string) (*domain.Role, error) {
+	var role domain.Role
+	if err := r.db.WithContext(ctx).Where("code = ?", code).First(&role).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &role, nil
+}
+
 // FindByName finds a role by name
 func (r *roleRepository) FindByName(ctx context.Context, name string) (*domain.Role, error) {
 	var role domain.Role
@@ -58,31 +69,84 @@ func (r *roleRepository) FindAll(ctx context.Context) ([]domain.Role, error) {
 
 // Update updates an existing role
 func (r *roleRepository) Update(ctx context.Context, id uuid.UUID, role *domain.Role) error {
-	return r.db.WithContext(ctx).Model(&domain.Role{}).Where("id = ?", id).Updates(role).Error
-}
-
-// Delete deletes a role by ID
-func (r *roleRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&domain.Role{}, id).Error
-}
-
-// AssignPermissions assigns permissions to a role
-func (r *roleRepository) AssignPermissions(ctx context.Context, roleID uuid.UUID, permissionIDs []uuid.UUID) error {
-	for _, permissionID := range permissionIDs {
-		if err := r.db.WithContext(ctx).Exec(
-			"INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
-			roleID,
-			permissionID,
-		).Error; err != nil {
-			return err
-		}
+	result := r.db.WithContext(ctx).Model(&domain.Role{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"code":        role.Code,
+		"name":        role.Name,
+		"description": role.Description,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
 	}
 	return nil
 }
 
+// Delete deletes a role by ID
+func (r *roleRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	result := r.db.WithContext(ctx).Delete(&domain.Role{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// AssignPermissions assigns permissions to a role
+func (r *roleRepository) AssignPermissions(ctx context.Context, roleID uuid.UUID, permissionIDs []uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureRecordExists(tx, &domain.Role{}, roleID); err != nil {
+			return err
+		}
+		if err := ensureRecordsExist(tx, &domain.Permission{}, permissionIDs); err != nil {
+			return err
+		}
+		for _, permissionID := range permissionIDs {
+			if err := tx.Exec(
+				"INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+				roleID,
+				permissionID,
+			).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *roleRepository) ReplacePermissions(ctx context.Context, roleID uuid.UUID, permissionIDs []uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := ensureRecordExists(tx, &domain.Role{}, roleID); err != nil {
+			return err
+		}
+		if err := ensureRecordsExist(tx, &domain.Permission{}, permissionIDs); err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM role_permissions WHERE role_id = ?", roleID).Error; err != nil {
+			return err
+		}
+		for _, permissionID := range permissionIDs {
+			if err := tx.Exec(
+				"INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+				roleID,
+				permissionID,
+			).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // GetPermissionsByRoleID retrieves permissions assigned to a role
 func (r *roleRepository) GetPermissionsByRoleID(ctx context.Context, roleID uuid.UUID) ([]domain.Permission, error) {
-	var permissions []domain.Permission
+	if err := ensureRecordExists(r.db.WithContext(ctx), &domain.Role{}, roleID); err != nil {
+		return nil, err
+	}
+	permissions := make([]domain.Permission, 0)
 	err := r.db.WithContext(ctx).Raw(
 		`SELECT p.*
 		FROM permissions p
@@ -98,9 +162,16 @@ func (r *roleRepository) GetPermissionsByRoleID(ctx context.Context, roleID uuid
 
 // RemovePermission removes a permission from a role
 func (r *roleRepository) RemovePermission(ctx context.Context, roleID uuid.UUID, permissionID uuid.UUID) error {
-	return r.db.WithContext(ctx).Exec(
+	result := r.db.WithContext(ctx).Exec(
 		"DELETE FROM role_permissions WHERE role_id = ? AND permission_id = ?",
 		roleID,
 		permissionID,
-	).Error
+	)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }

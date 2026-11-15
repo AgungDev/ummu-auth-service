@@ -1,6 +1,9 @@
 package http
 
 import (
+	"errors"
+
+	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
 	middleware "auth_service/internal/transport/http/middleware_http"
 	"auth_service/internal/usecases"
@@ -49,6 +52,10 @@ func (c *permissionController) Create(ctx *gin.Context) {
 	permission, err := c.permissionUsecase.Create(ctx.Request.Context(), req)
 	if err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "permission create failed: "+err.Error())
+		if errors.Is(err, domain.ErrConflict) {
+			ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -77,7 +84,12 @@ func (c *permissionController) GetByID(ctx *gin.Context) {
 	}
 
 	permission, err := c.permissionUsecase.GetByID(ctx.Request.Context(), permissionID)
-	if err != nil || permission == nil {
+	if err != nil {
+		c.logger.Error(correlationID, "", "anonymous", "permission lookup failed: "+err.Error())
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve permission"})
+		return
+	}
+	if permission == nil {
 		c.logger.Warn(correlationID, "", "anonymous", "permission not found")
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "permission not found"})
 		return
@@ -107,7 +119,7 @@ func (c *permissionController) GetAll(ctx *gin.Context) {
 		return
 	}
 
-	var responses []dto.PermissionResponse
+	responses := make([]dto.PermissionResponse, 0, len(permissions))
 	for _, permission := range permissions {
 		responses = append(responses, dto.PermissionResponse{
 			ID:          permission.ID.String(),
@@ -141,6 +153,14 @@ func (c *permissionController) Update(ctx *gin.Context) {
 
 	if err := c.permissionUsecase.Update(ctx.Request.Context(), permissionID, req); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "permission update failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "permission not found"})
+			return
+		}
+		if errors.Is(err, domain.ErrConflict) {
+			ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -162,6 +182,10 @@ func (c *permissionController) Delete(ctx *gin.Context) {
 
 	if err := c.permissionUsecase.Delete(ctx.Request.Context(), permissionID); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "permission delete failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "permission not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

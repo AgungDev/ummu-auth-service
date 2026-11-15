@@ -203,6 +203,10 @@ func (uc *userUsecase) AssignRoles(ctx context.Context, userID uuid.UUID, roleID
 	return uc.userRepo.AssignRoles(ctx, userID, roleIDs)
 }
 
+func (uc *userUsecase) ReplaceRoles(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error {
+	return uc.userRepo.ReplaceRoles(ctx, userID, roleIDs)
+}
+
 // GetRolesByUserID retrieves roles assigned to a user
 func (uc *userUsecase) GetRolesByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Role, error) {
 	return uc.userRepo.GetRolesByUserID(ctx, userID)
@@ -216,6 +220,10 @@ func (uc *userUsecase) RemoveRole(ctx context.Context, userID uuid.UUID, roleID 
 // AssignPermissions assigns direct permissions to a user
 func (uc *userUsecase) AssignPermissions(ctx context.Context, userID uuid.UUID, permissionIDs []uuid.UUID) error {
 	return uc.userRepo.AssignPermissions(ctx, userID, permissionIDs)
+}
+
+func (uc *userUsecase) ReplacePermissions(ctx context.Context, userID uuid.UUID, permissionIDs []uuid.UUID) error {
+	return uc.userRepo.ReplacePermissions(ctx, userID, permissionIDs)
 }
 
 // GetPermissions retrieves direct permissions assigned to a user

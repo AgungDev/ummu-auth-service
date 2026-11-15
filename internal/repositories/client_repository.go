@@ -64,8 +64,39 @@ func (r *clientRepository) FindAll(ctx context.Context) ([]domain.Client, error)
 // Update updates an existing client
 func (r *clientRepository) Update(ctx context.Context, id uuid.UUID, client *domain.Client) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&domain.Client{}).Where("id = ?", id).Updates(client).Error; err != nil {
+		result := tx.Model(&domain.Client{}).Where("id = ?", id).Updates(map[string]interface{}{
+			"client_id":          client.ClientID,
+			"name":               client.Name,
+			"client_secret_hash": client.ClientSecretHash,
+			"is_confidential":    client.IsConfidential,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return domain.ErrNotFound
+		}
+		if err := tx.Where("client_id = ?", id).Delete(&domain.ClientGrant{}).Error; err != nil {
 			return err
+		}
+		if err := tx.Where("client_id = ?", id).Delete(&domain.ClientRedirectURI{}).Error; err != nil {
+			return err
+		}
+		for i := range client.Grants {
+			client.Grants[i].ClientID = id
+		}
+		for i := range client.RedirectURIs {
+			client.RedirectURIs[i].ClientID = id
+		}
+		if len(client.Grants) > 0 {
+			if err := tx.Create(&client.Grants).Error; err != nil {
+				return err
+			}
+		}
+		if len(client.RedirectURIs) > 0 {
+			if err := tx.Create(&client.RedirectURIs).Error; err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -74,8 +105,12 @@ func (r *clientRepository) Update(ctx context.Context, id uuid.UUID, client *dom
 // Delete deletes a client by ID
 func (r *clientRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&domain.Client{}, id).Error; err != nil {
-			return err
+		result := tx.Delete(&domain.Client{}, id)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return domain.ErrNotFound
 		}
 		return nil
 	})

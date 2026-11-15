@@ -95,6 +95,10 @@ kedaluwarsa atau sudah tertukarkan, mulai dari langkah pertama.
 - **Auth / Get current user** dan **Auth / Logout** menggunakan bearer token.
 - **Google OIDC / 1 - Start login** dan **Google OIDC / 2 - Complete callback**
   menguji flow Google sebagaimana dijelaskan di atas.
+- Folder **RBAC** memuat contoh CRUD role/permission dan operasi relasi.
+  Atur collection variables `user_id`, `role_id`, dan `permission_id` sebelum
+  menjalankan request relasi. Dokumentasi semua endpoint ada di
+  [`API_DOCUMENTATION.md`](./API_DOCUMENTATION.md).
 
 Collection variable `username`, `password`, `google_code`, dan `google_state`
 adalah contoh input pengujian. Ganti nilainya sesuai kebutuhan; jangan

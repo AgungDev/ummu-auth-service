@@ -2,7 +2,6 @@ package usecases
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"auth_service/internal/domain"
@@ -36,14 +35,14 @@ func (uc *clientUsecase) Create(ctx context.Context, req dto.ClientRequest) (*do
 	}
 	if existingClient != nil {
 		uc.logger.Warn("", "", "", fmt.Sprintf("client already exists: client_id=%s", req.ClientID))
-		return nil, errors.New("client already exists")
+		return nil, fmt.Errorf("%w: client already exists", domain.ErrConflict)
 	}
 
 	// Hash client secret
 	hashedSecret, err := uc.security.HashPassword(req.ClientSecret)
 	if err != nil {
 		uc.logger.Error("", "", "", fmt.Sprintf("failed to hash client secret for client_id=%s: %v", req.ClientID, err))
-		return nil, errors.New("failed to hash client secret")
+		return nil, fmt.Errorf("failed to hash client secret: %w", err)
 	}
 
 	// build child records for normalized tables
@@ -93,10 +92,25 @@ func (uc *clientUsecase) GetAll(ctx context.Context) ([]domain.Client, error) {
 func (uc *clientUsecase) Update(ctx context.Context, id uuid.UUID, req dto.ClientRequest) error {
 	uc.logger.Info("", "", "", fmt.Sprintf("update client request received: id=%s, client_id=%s", id.String(), req.ClientID))
 
+	existingClient, err := uc.clientRepo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if existingClient == nil {
+		return domain.ErrNotFound
+	}
+	clientWithSameID, err := uc.clientRepo.FindByClientID(ctx, req.ClientID)
+	if err != nil {
+		return err
+	}
+	if clientWithSameID != nil && clientWithSameID.ID != id {
+		return fmt.Errorf("%w: client_id already exists", domain.ErrConflict)
+	}
+
 	hashedSecret, err := uc.security.HashPassword(req.ClientSecret)
 	if err != nil {
 		uc.logger.Error("", "", "", fmt.Sprintf("failed to hash client secret for client_id=%s: %v", req.ClientID, err))
-		return errors.New("failed to hash client secret")
+		return fmt.Errorf("failed to hash client secret: %w", err)
 	}
 
 	var redirectURIs []domain.ClientRedirectURI

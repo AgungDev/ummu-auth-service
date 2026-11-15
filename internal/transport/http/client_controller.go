@@ -1,11 +1,14 @@
 package http
 
 import (
+	"errors"
+	"net/http"
+
+	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
 	middleware "auth_service/internal/transport/http/middleware_http"
 	"auth_service/internal/usecases"
 	loggerpkg "auth_service/pkg/logger"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -48,6 +51,10 @@ func (c *clientController) Create(ctx *gin.Context) {
 	client, err := c.clientUsecase.Create(ctx.Request.Context(), req)
 	if err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "client create failed: "+err.Error())
+		if errors.Is(err, domain.ErrConflict) {
+			ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -88,7 +95,12 @@ func (c *clientController) GetByID(ctx *gin.Context) {
 	}
 
 	client, err := c.clientUsecase.GetByID(ctx.Request.Context(), clientID)
-	if err != nil || client == nil {
+	if err != nil {
+		c.logger.Error(correlationID, "", "anonymous", "client lookup failed: "+err.Error())
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve client"})
+		return
+	}
+	if client == nil {
 		c.logger.Warn(correlationID, "", "anonymous", "client not found")
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
 		return
@@ -173,6 +185,14 @@ func (c *clientController) Update(ctx *gin.Context) {
 
 	if err := c.clientUsecase.Update(ctx.Request.Context(), clientID, req); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "client update failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
+			return
+		}
+		if errors.Is(err, domain.ErrConflict) {
+			ctx.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -194,6 +214,10 @@ func (c *clientController) Delete(ctx *gin.Context) {
 
 	if err := c.clientUsecase.Delete(ctx.Request.Context(), clientID); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "client delete failed: "+err.Error())
+		if errors.Is(err, domain.ErrNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

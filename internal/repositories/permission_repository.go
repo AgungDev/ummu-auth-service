@@ -35,6 +35,17 @@ func (r *permissionRepository) FindByID(ctx context.Context, id uuid.UUID) (*dom
 	return &permission, nil
 }
 
+func (r *permissionRepository) FindByCode(ctx context.Context, code string) (*domain.Permission, error) {
+	var permission domain.Permission
+	if err := r.db.WithContext(ctx).Where("code = ?", code).First(&permission).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &permission, nil
+}
+
 // FindByName finds a permission by name
 func (r *permissionRepository) FindByName(ctx context.Context, name string) (*domain.Permission, error) {
 	var permission domain.Permission
@@ -81,10 +92,28 @@ func (r *permissionRepository) FindByUserID(ctx context.Context, userID uuid.UUI
 
 // Update updates an existing permission
 func (r *permissionRepository) Update(ctx context.Context, id uuid.UUID, permission *domain.Permission) error {
-	return r.db.WithContext(ctx).Model(&domain.Permission{}).Where("id = ?", id).Updates(permission).Error
+	result := r.db.WithContext(ctx).Model(&domain.Permission{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"code":        permission.Code,
+		"name":        permission.Name,
+		"description": permission.Description,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // Delete deletes a permission by ID
 func (r *permissionRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&domain.Permission{}, id).Error
+	result := r.db.WithContext(ctx).Delete(&domain.Permission{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }

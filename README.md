@@ -17,6 +17,8 @@
 Panduan konfigurasi Google OpenID Connect dan Postman collection tersedia di
 [`docs/google-oidc-postman.md`](docs/google-oidc-postman.md) dan
 [`docs/UMMU Auth Service.postman_collection.json`](docs/UMMU%20Auth%20Service.postman_collection.json).
+Dokumentasi API lengkap, termasuk authentication, OIDC, client, dan RBAC,
+tersedia di [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md).
 
 Tech stack utama:
 
