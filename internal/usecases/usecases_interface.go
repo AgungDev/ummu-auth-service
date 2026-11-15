@@ -12,6 +12,7 @@ import (
 type UserUsecaseInterface interface {
 	Register(ctx context.Context, req dto.UserRegisterRequest) (*domain.User, error)
 	Login(ctx context.Context, req dto.UserLoginRequest) (*domain.User, error)
+	FindOrCreateGoogleUser(ctx context.Context, identity domain.GoogleIdentity) (*domain.User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	GetByUsername(ctx context.Context, username string) (*domain.User, error)
 	GetAll(ctx context.Context) ([]domain.User, error)
@@ -29,6 +30,7 @@ type UserUsecaseInterface interface {
 type AuthUsecaseInterface interface {
 	Register(ctx context.Context, req dto.UserRegisterRequest) (*domain.User, error)
 	Login(ctx context.Context, req dto.UserLoginRequest) (*dto.AuthLoginResponse, error)
+	LoginWithGoogle(ctx context.Context, identity domain.GoogleIdentity) (*dto.AuthLoginResponse, error)
 	Refresh(ctx context.Context, req dto.RefreshTokenRequest) (*dto.TokenResponse, error)
 	Introspect(ctx context.Context, token string) (*dto.IntrospectResponse, error)
 	GetPermissionsByUserID(ctx context.Context, userID uuid.UUID) ([]string, error)

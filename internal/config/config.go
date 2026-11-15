@@ -28,10 +28,17 @@ type JWTConfig struct {
 	PublicKeyPath  string
 }
 
+type GoogleOIDCConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
 type Config struct {
 	AppConfig
 	DBConfig
 	JWTConfig
+	GoogleOIDCConfig
 }
 
 func LoadConfig() error {
@@ -74,12 +81,24 @@ func (c *Config) setConfig() error {
 	c.JWTConfig.PrivateKeyPath = viper.GetString("JWT_PRIVATE_KEY_PATH")
 	c.JWTConfig.PublicKeyPath = viper.GetString("JWT_PUBLIC_KEY_PATH")
 
+	// Google OpenID Connect
+	c.GoogleOIDCConfig.ClientID = viper.GetString("GOOGLE_CLIENT_ID")
+	c.GoogleOIDCConfig.ClientSecret = viper.GetString("GOOGLE_CLIENT_SECRET")
+	c.GoogleOIDCConfig.RedirectURL = viper.GetString("GOOGLE_REDIRECT_URL")
+	if c.GoogleOIDCConfig.RedirectURL == "" {
+		c.GoogleOIDCConfig.RedirectURL = "http://localhost:9001/auth/google/callback"
+	}
+
 	if c.AppConfig.Name == "" || c.AppConfig.Port == "" || c.AppConfig.Version == "" {
 		return fmt.Errorf("required application configuration is missing")
 	}
 
 	if c.DBConfig.Host == "" || c.DBConfig.Port == "" || c.DBConfig.User == "" || c.DBConfig.Password == "" {
 		return fmt.Errorf("required database configuration is missing")
+	}
+
+	if (c.GoogleOIDCConfig.ClientID == "") != (c.GoogleOIDCConfig.ClientSecret == "") {
+		return fmt.Errorf("Google OIDC client ID and client secret must both be configured")
 	}
 
 	return nil

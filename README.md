@@ -14,6 +14,10 @@
 * Manajemen client application (API clients yang dipakai internal seperti `gateway`, `portal-mahasiswa`, `admin-panel`)
 * Endpoint introspeksi/validasi token untuk service lain
 
+Panduan konfigurasi Google OpenID Connect dan Postman collection tersedia di
+[`docs/google-oidc-postman.md`](docs/google-oidc-postman.md) dan
+[`docs/UMMU Auth Service.postman_collection.json`](docs/UMMU%20Auth%20Service.postman_collection.json).
+
 Tech stack utama:
 
 * Golang (minimal Go 1.20)
@@ -137,6 +141,8 @@ Contoh claims minimal:
 
 ### Public / OAuth endpoints
 
+* `GET /auth/google` — memulai login Google OpenID Connect
+* `GET /auth/google/callback` — callback Google (redirect URI: `http://localhost:9001/auth/google/callback`)
 * `POST /oauth/token` — tukar kredensial / grant code => token
 * `GET  /oauth/authorize` — endpoint authorize (user login + consent)
 * `POST /oauth/revoke` — revocation
@@ -173,6 +179,16 @@ REFRESH_TOKEN_EXPIRE_DAYS=30
 OAUTH_ALLOW_PASSWORD_GRANT=true
 SIG_KEY_ALGO=RS256
 ```
+
+Untuk mengaktifkan Google OIDC, isi `GOOGLE_CLIENT_ID` dan
+`GOOGLE_CLIENT_SECRET` dari OAuth client bertipe Web application. Atur nama
+consent screen menjadi `UMMU Auth Service` dan daftarkan redirect URI persis
+`http://localhost:9001/auth/google/callback`. Login menggunakan scope `openid`,
+`email`, dan `profile`; akun autentikasi hanya menyimpan subject Google.
+Pengguna baru dibuat berdasarkan email terverifikasi Google, dan akun lokal
+dengan email yang sama akan ditautkan ke identitas tersebut.
+Untuk database yang sudah ada, jalankan `migrations/20261115_google_oidc.sql`
+sebelum mengaktifkan login Google; schema instalasi baru sudah memuat indeksnya.
 
 ---
 

@@ -59,6 +59,31 @@ func (r *userRepository) FindByEmail(ctx context.Context, email string) (*domain
 	return &user, nil
 }
 
+func (r *userRepository) FindByGoogleSub(ctx context.Context, subject string) (*domain.User, error) {
+	var user domain.User
+	if err := r.db.WithContext(ctx).Where("google_sub = ?", subject).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *userRepository) SetGoogleSub(ctx context.Context, userID uuid.UUID, subject string) error {
+	result := r.db.WithContext(ctx).
+		Model(&domain.User{}).
+		Where("id = ? AND (google_sub IS NULL OR google_sub = '')", userID).
+		Update("google_sub", subject)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("Google identity is already linked to an account")
+	}
+	return nil
+}
+
 // FindAll retrieves all users
 func (r *userRepository) FindAll(ctx context.Context) ([]domain.User, error) {
 	var users []domain.User

@@ -76,6 +76,18 @@ func (uc *authUsecase) Login(ctx context.Context, req dto.UserLoginRequest) (*dt
 		clientID = &client.ID
 	}
 
+	return uc.createLoginResponse(ctx, user, clientID)
+}
+
+func (uc *authUsecase) LoginWithGoogle(ctx context.Context, identity domain.GoogleIdentity) (*dto.AuthLoginResponse, error) {
+	user, err := uc.userUsecase.FindOrCreateGoogleUser(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+	return uc.createLoginResponse(ctx, user, nil)
+}
+
+func (uc *authUsecase) createLoginResponse(ctx context.Context, user *domain.User, clientID *uuid.UUID) (*dto.AuthLoginResponse, error) {
 	roles := []interface{}{
 		map[string]interface{}{
 			"role":        "user",

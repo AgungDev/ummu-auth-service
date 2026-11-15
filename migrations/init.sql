@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(128) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(128),
+    google_sub TEXT,
     status VARCHAR(20) NOT NULL DEFAULT 'inactive'
         CHECK (status IN (
             'active',
@@ -23,6 +24,10 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub
+    ON users (google_sub)
+    WHERE google_sub IS NOT NULL;
 
 -- =====================================================
 -- ROLES

@@ -4,6 +4,7 @@ import (
 	"auth_service/internal/config"
 	"auth_service/internal/repositories"
 	"auth_service/internal/security"
+	"auth_service/internal/services"
 	controllersAPI "auth_service/internal/transport/http"
 	middleware_http "auth_service/internal/transport/http/middleware_http"
 	"auth_service/internal/usecases"
@@ -23,6 +24,7 @@ type Server struct {
 	cfg             *config.Config
 	logger          loggerpkg.Logger
 	securityService security.SecurityService
+	googleOIDC      services.GoogleOIDCService
 
 	// Repositories
 	userRepository       repositories.UserRepositoryInterface
@@ -66,6 +68,13 @@ func NewServer(cfg *config.Config) (*Server, error) {
 	// Initialize shared services
 	securityService := security.NewSecurityService(cfg.JWTConfig)
 	logSvc := loggerpkg.NewLogger(cfg.AppConfig.Name, cfg.AppConfig.Version, cfg.AppConfig.Environment)
+	var googleOIDC services.GoogleOIDCService
+	if cfg.GoogleOIDCConfig.ClientID != "" || cfg.GoogleOIDCConfig.ClientSecret != "" {
+		googleOIDC, err = services.NewGoogleOIDCService(cfg.GoogleOIDCConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize Google OIDC service: %w", err)
+		}
+	}
 
 	// Initialize usecases
 	userUsecase := usecases.NewUserUsecase(userRepository, securityService)
@@ -96,6 +105,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		cfg:                  cfg,
 		logger:               logSvc,
 		securityService:      securityService,
+		googleOIDC:           googleOIDC,
 		userRepository:       userRepository,
 		clientRepository:     clientRepository,
 		roleRepository:       roleRepository,
@@ -116,8 +126,9 @@ func (s *Server) initRoutes() {
 
 	// Authentication endpoints
 	authUsecase := usecases.NewAuthUsecase(s.userUsecase, s.clientUsecase, s.permissionUsecase, s.tokenUsecase, s.securityService, s.logger, s.cfg.AppConfig.Name, 15, 24)
-	authCtrl := controllersAPI.NewAuthController(authUsecase, s.securityService, s.logger)
+	authCtrl := controllersAPI.NewAuthController(authUsecase, s.securityService, s.googleOIDC, s.logger, s.cfg.AppConfig.Environment == "production")
 	authCtrl.Route(rg)
+	authCtrl.GoogleRoute(s.engine)
 
 	// Protected resources
 	protected := rg.Group("")

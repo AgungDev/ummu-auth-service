@@ -1,22 +1,30 @@
 package http
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
+	"fmt"
+	"net/http"
+
 	"auth_service/internal/domain/dto"
 	"auth_service/internal/security"
+	"auth_service/internal/services"
 	middleware "auth_service/internal/transport/http/middleware_http"
 	"auth_service/internal/usecases"
 	"auth_service/pkg"
 	loggerpkg "auth_service/pkg/logger"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 type AuthController struct {
-	authUsecase usecases.AuthUsecaseInterface
-	security    security.SecurityService
-	logger      loggerpkg.Logger
+	authUsecase   usecases.AuthUsecaseInterface
+	security      security.SecurityService
+	googleOIDC    services.GoogleOIDCService
+	logger        loggerpkg.Logger
+	secureCookies bool
 }
 
 var _ = []RegisterRequest{}
@@ -24,12 +32,16 @@ var _ = []RegisterRequest{}
 func NewAuthController(
 	authUsecase usecases.AuthUsecaseInterface,
 	securityService security.SecurityService,
+	googleOIDC services.GoogleOIDCService,
 	logger loggerpkg.Logger,
+	secureCookies bool,
 ) *AuthController {
 	return &AuthController{
-		authUsecase: authUsecase,
-		security:    securityService,
-		logger:      logger,
+		authUsecase:   authUsecase,
+		security:      securityService,
+		googleOIDC:    googleOIDC,
+		logger:        logger,
+		secureCookies: secureCookies,
 	}
 }
 
@@ -47,6 +59,78 @@ func (c *AuthController) Route(rg *gin.RouterGroup) {
 	protected.GET("/permissions", c.GetPermissions)
 	protected.POST("/logout", c.Logout)
 	protected.POST("/authorize", c.Authorize)
+}
+
+func (c *AuthController) GoogleRoute(rg *gin.Engine) {
+	rg.GET("/auth/google", c.GoogleLogin)
+	rg.GET("/auth/google/callback", c.GoogleCallback)
+}
+
+func (c *AuthController) GoogleLogin(ctx *gin.Context) {
+	if c.googleOIDC == nil {
+		JSONError(ctx, http.StatusServiceUnavailable, "Google login is not configured")
+		return
+	}
+
+	state, err := newOAuthState()
+	if err != nil {
+		c.logger.Error(middleware.GetCorrelationID(ctx), "", "anonymous", "failed to generate Google OAuth state: "+err.Error())
+		JSONError(ctx, http.StatusInternalServerError, "unable to start Google login")
+		return
+	}
+
+	ctx.SetSameSite(http.SameSiteLaxMode)
+	ctx.SetCookie("google_oauth_state", state, 300, "/auth/google", "", c.secureCookies, true)
+	ctx.Redirect(http.StatusFound, c.googleOIDC.AuthorizationURL(state))
+}
+
+func (c *AuthController) GoogleCallback(ctx *gin.Context) {
+	correlationID := middleware.GetCorrelationID(ctx)
+	state, cookieErr := ctx.Cookie("google_oauth_state")
+	ctx.SetSameSite(http.SameSiteLaxMode)
+	ctx.SetCookie("google_oauth_state", "", -1, "/auth/google", "", c.secureCookies, true)
+	if cookieErr != nil || state == "" || ctx.Query("state") == "" ||
+		subtle.ConstantTimeCompare([]byte(state), []byte(ctx.Query("state"))) != 1 {
+		c.logger.Warn(correlationID, "", "anonymous", "Google login rejected because OAuth state did not match")
+		JSONError(ctx, http.StatusBadRequest, "invalid Google OAuth state")
+		return
+	}
+	if ctx.Query("error") != "" {
+		c.logger.Warn(correlationID, "", "anonymous", "Google login was not authorized")
+		JSONError(ctx, http.StatusUnauthorized, "Google login was not authorized")
+		return
+	}
+	code := ctx.Query("code")
+	if code == "" {
+		JSONError(ctx, http.StatusBadRequest, "missing Google authorization code")
+		return
+	}
+	if c.googleOIDC == nil {
+		JSONError(ctx, http.StatusServiceUnavailable, "Google login is not configured")
+		return
+	}
+
+	identity, err := c.googleOIDC.VerifyCallback(ctx.Request.Context(), code, state)
+	if err != nil {
+		c.logger.Warn(correlationID, "", "anonymous", "Google identity verification failed: "+err.Error())
+		JSONError(ctx, http.StatusUnauthorized, "Google authentication failed")
+		return
+	}
+	response, err := c.authUsecase.LoginWithGoogle(ctx.Request.Context(), identity)
+	if err != nil {
+		c.logger.Error(correlationID, "", "anonymous", "Google login failed: "+err.Error())
+		JSONError(ctx, http.StatusUnauthorized, "Google authentication failed")
+		return
+	}
+	JSONOK(ctx, "login success", response)
+}
+
+func newOAuthState() (string, error) {
+	randomBytes := make([]byte, 32)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", fmt.Errorf("generate secure OAuth state: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(randomBytes), nil
 }
 
 // Register godoc

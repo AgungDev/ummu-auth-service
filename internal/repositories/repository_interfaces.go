@@ -13,6 +13,8 @@ type UserRepositoryInterface interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	FindByUsername(ctx context.Context, username string) (*domain.User, error)
 	FindByEmail(ctx context.Context, email string) (*domain.User, error)
+	FindByGoogleSub(ctx context.Context, subject string) (*domain.User, error)
+	SetGoogleSub(ctx context.Context, userID uuid.UUID, subject string) error
 	FindAll(ctx context.Context) ([]domain.User, error)
 	Update(ctx context.Context, id uuid.UUID, user *domain.User) error
 	Delete(ctx context.Context, id uuid.UUID) error
