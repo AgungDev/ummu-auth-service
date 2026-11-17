@@ -35,6 +35,17 @@ func (r *permissionRepository) FindByID(ctx context.Context, id uuid.UUID) (*dom
 	return &permission, nil
 }
 
+func (r *permissionRepository) FindByCode(ctx context.Context, code string) (*domain.Permission, error) {
+	var permission domain.Permission
+	if err := r.db.WithContext(ctx).Where("code = ?", code).First(&permission).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &permission, nil
+}
+
 // FindByName finds a permission by name
 func (r *permissionRepository) FindByName(ctx context.Context, name string) (*domain.Permission, error) {
 	var permission domain.Permission
@@ -56,7 +67,7 @@ func (r *permissionRepository) FindAll(ctx context.Context) ([]domain.Permission
 	return permissions, nil
 }
 
-// FindByUserID retrieves permissions assigned to the user's roles
+// FindByUserID retrieves permissions assigned to the user's roles and direct permissions
 func (r *permissionRepository) FindByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Permission, error) {
 	var permissions []domain.Permission
 	err := r.db.WithContext(ctx).Raw(
@@ -64,7 +75,15 @@ func (r *permissionRepository) FindByUserID(ctx context.Context, userID uuid.UUI
 		FROM permissions p
 		JOIN role_permissions rp ON rp.permission_id = p.id
 		JOIN user_roles ur ON ur.role_id = rp.role_id
-		WHERE ur.user_id = ?`, userID).Scan(&permissions).Error
+		WHERE ur.user_id = ?
+		UNION
+		SELECT DISTINCT p.*
+		FROM permissions p
+		JOIN user_permissions up ON up.permission_id = p.id
+		WHERE up.user_id = ?`,
+		userID,
+		userID,
+	).Scan(&permissions).Error
 	if err != nil {
 		return nil, err
 	}
@@ -73,10 +92,28 @@ func (r *permissionRepository) FindByUserID(ctx context.Context, userID uuid.UUI
 
 // Update updates an existing permission
 func (r *permissionRepository) Update(ctx context.Context, id uuid.UUID, permission *domain.Permission) error {
-	return r.db.WithContext(ctx).Model(&domain.Permission{}).Where("id = ?", id).Updates(permission).Error
+	result := r.db.WithContext(ctx).Model(&domain.Permission{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"code":        permission.Code,
+		"name":        permission.Name,
+		"description": permission.Description,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // Delete deletes a permission by ID
 func (r *permissionRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&domain.Permission{}, id).Error
+	result := r.db.WithContext(ctx).Delete(&domain.Permission{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }

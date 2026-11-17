@@ -2,7 +2,7 @@ package usecases
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
 	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
@@ -21,16 +21,23 @@ func NewPermissionUsecase(permissionRepo repositories.PermissionRepositoryInterf
 
 // Create creates a new permission
 func (uc *permissionUsecase) Create(ctx context.Context, req dto.PermissionRequest) (*domain.Permission, error) {
-	// Check if permission already exists
-	existingPermission, err := uc.permissionRepo.FindByName(ctx, req.Name)
-	if err != nil {
-		return nil, err
-	}
-	if existingPermission != nil {
-		return nil, errors.New("permission already exists")
+	for _, lookup := range []struct {
+		value string
+		find  func(context.Context, string) (*domain.Permission, error)
+		label string
+	}{
+		{req.Code, uc.permissionRepo.FindByCode, "permission code"},
+		{req.Name, uc.permissionRepo.FindByName, "permission name"},
+	} {
+		existingPermission, err := lookup.find(ctx, lookup.value)
+		if err != nil {
+			return nil, err
+		}
+		if existingPermission != nil {
+			return nil, fmt.Errorf("%w: %s already exists", domain.ErrConflict, lookup.label)
+		}
 	}
 
-	// Create permission
 	permission := &domain.Permission{
 		Code:        req.Code,
 		Name:        req.Name,
@@ -66,7 +73,32 @@ func (uc *permissionUsecase) GetAll(ctx context.Context) ([]domain.Permission, e
 
 // Update updates permission information
 func (uc *permissionUsecase) Update(ctx context.Context, id uuid.UUID, req dto.PermissionRequest) error {
-	permission := &domain.Permission{
+	permission, err := uc.permissionRepo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if permission == nil {
+		return domain.ErrNotFound
+	}
+
+	for _, lookup := range []struct {
+		value string
+		find  func(context.Context, string) (*domain.Permission, error)
+		label string
+	}{
+		{req.Code, uc.permissionRepo.FindByCode, "permission code"},
+		{req.Name, uc.permissionRepo.FindByName, "permission name"},
+	} {
+		existingPermission, err := lookup.find(ctx, lookup.value)
+		if err != nil {
+			return err
+		}
+		if existingPermission != nil && existingPermission.ID != id {
+			return fmt.Errorf("%w: %s already exists", domain.ErrConflict, lookup.label)
+		}
+	}
+
+	permission = &domain.Permission{
 		Code:        req.Code,
 		Name:        req.Name,
 		Description: req.Description,

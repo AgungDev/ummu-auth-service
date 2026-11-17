@@ -1,6 +1,6 @@
 # auth_service — Layanan Otentikasi untuk Sistem Informasi Akademik
 
-> Auth service khusus buat Universitas Muhammadiyah Maluku Utara. Semua proses login / otorisasi lewat sini. Ringkas, aman (usahakan), dan modular. Kalau nggak aman, kita perbaiki lagi — jangan panik dulu.
+> Auth service khusus buat Universitas Muhammadiyah Maluku Utara. Semua proses login / otorisasi lewat sini. Ringkas, aman (usahakan), dan modular.
 
 ---
 
@@ -13,6 +13,12 @@
 * Mengeluarkan dan memverifikasi token (OAuth2 flows + JWT)
 * Manajemen client application (API clients yang dipakai internal seperti `gateway`, `portal-mahasiswa`, `admin-panel`)
 * Endpoint introspeksi/validasi token untuk service lain
+
+Panduan konfigurasi Google OpenID Connect dan Postman collection tersedia di
+[`docs/google-oidc-postman.md`](docs/google-oidc-postman.md) dan
+[`docs/UMMU Auth Service.postman_collection.json`](docs/UMMU%20Auth%20Service.postman_collection.json).
+Dokumentasi API lengkap, termasuk authentication, OIDC, client, dan RBAC,
+tersedia di [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md).
 
 Tech stack utama:
 
@@ -77,7 +83,7 @@ Tabel utama:
 * `role_permissions` (role_id, permission_id)
 * `user_roles` (user_id, role_id)
 * `clients` (id, client_id, client_secret_hash, redirect_uris, grants, is_confidential)
-* `oauth_tokens` (id, user_id, client_id, access_token, refresh_token, expires_at)
+* `tokens` (id, user_id, client_id, refresh_token_hash, expires_at)
 
 > Tips: jangan simpan password atau client secret secara plain — hash dengan argon2id / bcrypt.
 
@@ -87,12 +93,12 @@ Tabel utama:
 
 1. **Login (Password grant - dev/legacy)**
 
-   * Client -> `POST /oauth/token` dengan grant_type=password, username, password, client_id, client_secret
+   * Client -> `POST /api/v1/oauth/token` dengan grant_type=password, username, password, client_id, client_secret
    * Service memverifikasi kredensial -> keluarkan `access_token` (JWT) + `refresh_token`
 2. **Authorization Code (production UI)**
 
    * Client (browser) redirect ke `/oauth/authorize` -> user login -> redirect kembali dengan `code`
-   * Client tukarkan code ke `/oauth/token` -> dapat access + refresh
+   * Client tukarkan code ke `/api/v1/oauth/token` -> dapat access + refresh
 3. **Validasi token oleh service lain**
 
    * API Gateway/service memanggil `/introspect` atau memverifikasi JWT menggunakan public key (recommended)
@@ -137,7 +143,9 @@ Contoh claims minimal:
 
 ### Public / OAuth endpoints
 
-* `POST /oauth/token` — tukar kredensial / grant code => token
+* `GET /auth/google` — memulai login Google OpenID Connect
+* `GET /auth/google/callback` — callback Google (redirect URI: `http://localhost:7000/auth/google/callback`)
+* `POST /api/v1/oauth/token` — tukar kredensial / refresh token
 * `GET  /oauth/authorize` — endpoint authorize (user login + consent)
 * `POST /oauth/revoke` — revocation
 * `POST /oauth/introspect` — introspeksi token (opsional jika service lain tidak mau/ bisa verifikasi JWT)
@@ -174,12 +182,59 @@ OAUTH_ALLOW_PASSWORD_GRANT=true
 SIG_KEY_ALGO=RS256
 ```
 
+Untuk mengaktifkan Google OIDC, isi `GOOGLE_CLIENT_ID` dan
+`GOOGLE_CLIENT_SECRET` dari OAuth client bertipe Web application. Atur nama
+consent screen menjadi `UMMU Auth Service` dan daftarkan redirect URI persis
+`http://localhost:7000/auth/google/callback`. Untuk mengembalikan hasil login ke
+SPA, atur `GOOGLE_FRONTEND_CALLBACK_URL` ke URL frontend, misalnya
+`http://localhost:5173/oauth/callback`. Login menggunakan scope `openid`,
+`email`, dan `profile`; akun autentikasi hanya menyimpan subject Google.
+Pengguna baru dibuat berdasarkan email terverifikasi Google, dan akun lokal
+dengan email yang sama akan ditautkan ke identitas tersebut.
+Untuk database yang sudah ada, jalankan `migrations/20261115_google_oidc.sql`
+sebelum mengaktifkan login Google; schema instalasi baru sudah memuat indeksnya.
+Sebelum mengaktifkan token SIAK, jalankan
+`migrations/20261116_resource_token_scope.sql` pada database yang sudah ada.
+Refresh token lama harus diterbitkan ulang karena tidak menyimpan audience dan scope.
+
 ---
 
 ## Docker & docker-compose (saran singkat)
 
 * `docker-compose.yml` untuk dev: postgres, migration, auth_service
 * Gunakan secrets untuk private key dan client secrets
+
+### Menjalankan mode development tanpa build image aplikasi
+
+Mode ini menjalankan PostgreSQL di Docker dan menjalankan aplikasi Go dari source
+yang di-mount ke container. Air akan build ulang dan restart aplikasi ketika file
+`.go` disimpan. Docker tetap perlu mengunduh image Go dan PostgreSQL saat pertama
+kali dijalankan, tetapi tidak perlu menjalankan `docker build` untuk aplikasi.
+
+1. Salin `.env.example` menjadi `.env`, lalu sesuaikan konfigurasi database:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+2. Buat key JWT di root repository (membutuhkan OpenSSL):
+
+   ```powershell
+   openssl genrsa -out jwt_private.pem 2048
+   openssl rsa -in jwt_private.pem -pubout -out jwt_public.pem
+   ```
+
+3. Jalankan database dan aplikasi development:
+
+   ```powershell
+   docker compose --profile dev up db auth_service_dev
+   ```
+
+   Perubahan file `.go` akan memicu restart otomatis; hentikan dengan `Ctrl+C`.
+
+Service `auth_service` yang memakai Dockerfile tetap tersedia untuk menjalankan
+mode biasa. Jangan jalankan kedua service aplikasi bersamaan karena keduanya
+menggunakan port yang sama.
 
 ---
 
@@ -194,7 +249,7 @@ SIG_KEY_ALGO=RS256
 
 ```
 # Password grant (dev)
-curl -X POST http://localhost:8080/oauth/token \
+curl -X POST http://localhost:9001/api/v1/oauth/token \
   -d "grant_type=password&username=alice&password=secret&client_id=try-to-schedule&client_secret=xxx"
 
 # Response: {"access_token":"...","token_type":"Bearer","expires_in":900,"refresh_token":"..."}
@@ -241,4 +296,3 @@ curl -X POST http://localhost:8080/oauth/token \
 * `gorm.io/gorm`
 * `github.com/golang-jwt/jwt/v5`
 * `github.com/alexedwards/argon2id` (atau `bcrypt`)
-
