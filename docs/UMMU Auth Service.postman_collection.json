@@ -1,0 +1,890 @@
+{
+  "info": {
+    "_postman_id": "3e75b96b-4376-4b6f-9f4f-4b69a2609001",
+    "name": "UMMU Auth Service",
+    "description": "Auth Service API and Google OpenID Connect flow. See google-oidc-postman.md for setup and browser/Postman cookie instructions.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:9001"
+    },
+    {
+      "key": "username",
+      "value": "agung"
+    },
+    {
+      "key": "password",
+      "value": "admin"
+    },
+    {
+      "key": "email",
+      "value": "ganzide404@gmail.com"
+    },
+    {
+      "key": "full_name",
+      "value": "Arjun Nurdin"
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "role_id",
+      "value": ""
+    },
+    {
+      "key": "permission_id",
+      "value": ""
+    },
+    {
+      "key": "google_state",
+      "value": ""
+    },
+    {
+      "key": "google_code",
+      "value": ""
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "key": "client_internal_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "oauth_client_id",
+      "value": "web-client",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Google OIDC",
+      "item": [
+        {
+          "name": "1 - Start login",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/google",
+            "description": "Start the browser login. Keep Postman's cookie jar enabled, then open the Location response header in a browser. Follow the documented procedure to complete the callback in Postman."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Google login redirects to the authorization provider', function () {",
+                  "    pm.response.to.have.status(302);",
+                  "});",
+                  "const location = pm.response.headers.get('Location');",
+                  "if (location) {",
+                  "    const authorizationUrl = require('url').parse(location, true);",
+                  "    const state = authorizationUrl.query.state;",
+                  "    if (state) pm.collectionVariables.set('google_state', state);",
+                  "    pm.test('Authorization request includes OIDC scopes', function () {",
+                  "        const scopes = (authorizationUrl.query.scope || '').split(' ');",
+                  "        pm.expect(scopes).to.include('openid');",
+                  "        pm.expect(scopes).to.include('email');",
+                  "        pm.expect(scopes).to.include('profile');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "2 - Complete callback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/google/callback?code={{google_code}}&state={{google_state}}",
+            "description": "After completing consent in the browser, copy the callback code and state from its address bar into the collection variables, then send this request. The Postman cookie jar must contain the state cookie from request 1."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Google callback succeeds', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test('Response contains access and refresh tokens', function () {",
+                  "    pm.expect(body.success).to.eql(true);",
+                  "    pm.expect(body.data.access_token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.data.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "if (body.data && body.data.access_token && body.data.refresh_token) {",
+                  "    pm.collectionVariables.set('access_token', body.data.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"full_name\": \"{{full_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/register"
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.access_token && body.data.refresh_token) {",
+                  "    pm.collectionVariables.set('access_token', body.data.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/refresh"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Refresh succeeds', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.access_token && body.data.refresh_token) {",
+                  "    pm.collectionVariables.set('access_token', body.data.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get current user",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/me"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/logout",
+            "description": "Revokes refresh-token state for the authenticated user."
+          }
+        }
+      ]
+    },
+    {
+      "name": "RBAC",
+      "item": [
+        {
+          "name": "user",
+          "item": [
+            {
+              "name": "Create user",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/users",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"alice\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"a\",\n  \"full_name\": \"Alice Example\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const body = pm.response.json();",
+                      "if (body.data && body.data.id) pm.collectionVariables.set(\"user_id\", body.data.id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List users",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/users"
+              }
+            },
+            {
+              "name": "Get user",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}"
+              }
+            },
+            {
+              "name": "Update user",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"alice@example.com\",\n  \"full_name\": \"Alice Example\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Delete user",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}"
+              }
+            },
+            {
+              "name": "Get user roles",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}/roles"
+              }
+            },
+            {
+              "name": "Add roles to user",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"role_ids\": [\"{{role_id}}\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}/roles"
+              }
+            },
+            {
+              "name": "Replace user roles",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"role_ids\": [\"{{role_id}}\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}/roles"
+              }
+            },
+            {
+              "name": "Remove role from user",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}/roles/{{role_id}}"
+              }
+            },
+            {
+              "name": "Get direct user permissions",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}/permissions"
+              }
+            },
+            {
+              "name": "Add direct permission to user",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"permission_ids\": [\"{{permission_id}}\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}/permissions"
+              }
+            },
+            {
+              "name": "Replace direct user permissions",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"permission_ids\": [\"{{permission_id}}\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}/permissions"
+              }
+            },
+            {
+              "name": "Remove direct permission from user",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/users/{{user_id}}/permissions/{{permission_id}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "roles",
+          "item": [
+            {
+              "name": "Create role",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"content_manager\",\n  \"name\": \"Content Manager\",\n  \"description\": \"Manages content\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/roles"
+              }
+            },
+            {
+              "name": "List roles",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/roles"
+              }
+            },
+            {
+              "name": "Get role",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/roles/{{role_id}}"
+              }
+            },
+            {
+              "name": "Update role",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"content_manager\",\n  \"name\": \"Content Manager\",\n  \"description\": \"Updated description\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/roles/{{role_id}}"
+              }
+            },
+            {
+              "name": "Delete role",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/roles/{{role_id}}"
+              }
+            },
+            {
+              "name": "Get role permissions",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/roles/{{role_id}}/permissions"
+              }
+            },
+            {
+              "name": "Add permissions to role",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"permission_ids\": [\"{{permission_id}}\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/roles/{{role_id}}/permissions"
+              }
+            },
+            {
+              "name": "Replace role permissions",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"permission_ids\": [\"{{permission_id}}\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/roles/{{role_id}}/permissions"
+              }
+            },
+            {
+              "name": "Remove permission from role",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/roles/{{role_id}}/permissions/{{permission_id}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "permission",
+          "item": [
+            {
+              "name": "Create permission",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"article:publish\",\n  \"name\": \"Publish article\",\n  \"description\": \"Publish an article\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/permissions"
+              }
+            },
+            {
+              "name": "List permissions",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/permissions"
+              }
+            },
+            {
+              "name": "Get permission",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/permissions/{{permission_id}}"
+              }
+            },
+            {
+              "name": "Update permission",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"article:publish\",\n  \"name\": \"Publish article\",\n  \"description\": \"Updated description\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": "{{baseUrl}}/api/v1/permissions/{{permission_id}}"
+              }
+            },
+            {
+              "name": "Delete permission",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{access_token}}"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/permissions/{{permission_id}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "client",
+          "item": [
+            {
+              "name": "Create client",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/clients",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"web-client\",\n  \"name\": \"Web Application\",\n  \"client_secret\": \"replace-with-a-secret\",\n  \"redirect_uris\": [\n    \"http://localhost:3000/auth/callback\"\n  ],\n  \"grants\": [\n    \"password\",\n    \"refresh_token\"\n  ],\n  \"is_confidential\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const body = pm.response.json();",
+                      "if (body.data && body.data.id) pm.collectionVariables.set(\"client_internal_id\", body.data.id);",
+                      "if (body.data && body.data.client_id) pm.collectionVariables.set(\"oauth_client_id\", body.data.client_id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List clients",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/clients"
+              }
+            },
+            {
+              "name": "Get client",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/clients/{{client_internal_id}}"
+              }
+            },
+            {
+              "name": "Update client",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{baseUrl}}/api/v1/clients/{{client_internal_id}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"client_id\": \"web-client\",\n  \"name\": \"Web Application\",\n  \"client_secret\": \"replace-with-a-secret\",\n  \"redirect_uris\": [\n    \"http://localhost:3000/auth/callback\"\n  ],\n  \"grants\": [\n    \"password\",\n    \"refresh_token\"\n  ],\n  \"is_confidential\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Delete client",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/clients/{{client_internal_id}}"
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{access_token}}",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:alpine
+    container_name: auth_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - auth_net
+
+  auth_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth_service
+    expose:
+      - "${APP_PORT}"
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - ./jwt_private.pem:/app/jwt_private.pem:ro
+      - ./jwt_public.pem:/app/jwt_public.pem:ro
+    networks:
+      - auth_net
+
+  auth_service_dev:
+    image: golang:1.24-bookworm
+    container_name: auth_service_dev
+    profiles:
+      - dev
+    working_dir: /app
+    command: sh -c "go install github.com/air-verse/air@v1.61.7 && air -c .air.toml"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    networks:
+      - auth_net
+
+volumes:
+  db_data:
+  go_mod_cache:
+  go_build_cache:
+
+networks:
+  auth_net:
+    driver: bridge
