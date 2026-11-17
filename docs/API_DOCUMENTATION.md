@@ -44,6 +44,11 @@ Layanan menerima `X-Correlation-ID` untuk correlation ID; jika header tidak
 dikirim, layanan membuat ID sendiri. Response menyertakan
 `X-Correlation-ID`.
 
+Auth Service menerbitkan JWT RS256 dengan issuer dari `JWT_ISSUER`, `kid` dari
+`JWT_KEY_ID`, audience serta scope dari permintaan token yang diizinkan.
+Resource Server mengambil kunci publik dari `/.well-known/jwks.json`; endpoint
+ini hanya mengembalikan public key dan dapat di-cache.
+
 Response standar API dibungkus sebagai:
 
 ```json
@@ -245,12 +250,13 @@ APP_NAME=UMMU Auth Service
 APP_PORT=9001
 GOOGLE_CLIENT_ID=<OAuth client ID>
 GOOGLE_CLIENT_SECRET=<OAuth client secret>
-GOOGLE_REDIRECT_URL=http://localhost:9001/auth/google/callback
+GOOGLE_REDIRECT_URL=http://localhost:7000/auth/google/callback
+GOOGLE_FRONTEND_CALLBACK_URL=http://localhost:5173/oauth/callback
 ```
 
 Di Google Cloud, gunakan OAuth client tipe **Web application**, nama aplikasi
 **UMMU Auth Service**, dan authorized redirect URI persis
-`http://localhost:9001/auth/google/callback`. Isi client ID dan secret
+`http://localhost:7000/auth/google/callback`. Isi client ID dan secret
 bersamaan. Jangan masukkan secret ke repository atau Postman collection.
 
 ### 5.1 Memulai login
@@ -260,19 +266,24 @@ bersamaan. Jangan masukkan secret ke repository atau Postman collection.
 | `GET` | `/auth/google` | - | Tidak | HTTP `302`, redirect ke Google dan set cookie state |
 
 Sukses: HTTP `302` redirect ke Google dan mengatur cookie HttpOnly
-`google_oauth_state` (berumur lima menit, SameSite=Lax). Body tidak
-disertakan. OIDC yang belum dikonfigurasi mengembalikan HTTP `503`.
+`google_oauth_state` (berumur lima menit, SameSite=Lax). Tambahkan query
+`?response=frontend` untuk meminta hasil login dikembalikan ke
+`GOOGLE_FRONTEND_CALLBACK_URL`; tanpa parameter tersebut, alur tetap ditujukan
+untuk respons JSON/Postman. OIDC yang belum dikonfigurasi mengembalikan HTTP
+`503`.
 
 ### 5.2 Callback Google
 
 | Method | Path | Header | Query | Body | Response sukses |
 |---|---|---|---|---|---|
-| `GET` | `/auth/google/callback` | Cookie `google_oauth_state` dari awal flow | `code`, `state` (atau `error` saat consent ditolak) | Tidak | HTTP `200`, envelope login/token |
+| `GET` | `/auth/google/callback` | Cookie state dari awal flow | `code`, `state` (atau `error` saat consent ditolak) | Tidak | HTTP `200` JSON atau HTTP `302` ke frontend |
 
 Browser diarahkan Google ke callback ini. Service mencocokkan cookie dengan
 query `state`, menukarkan `code`, kemudian mengembalikan HTTP `200` berupa
-envelope login dengan access token, refresh token, dan user. Callback
-mengembalikan JSON, bukan halaman frontend.
+envelope login dengan access token, refresh token, dan user pada alur default.
+Untuk `response=frontend`, service mengarahkan browser kembali ke URL frontend
+yang dikonfigurasi; token dikirim sebagai URL fragment agar tidak ikut pada
+request HTTP berikutnya. Frontend harus segera membersihkan fragment dari URL.
 
 Error umum: HTTP `400` untuk state invalid atau code hilang; HTTP `401` untuk
 login yang ditolak atau identitas/token Google tidak valid; HTTP `503` bila
@@ -338,7 +349,9 @@ Password grant:
   "client_id": "web-client",
   "client_secret": "replace-with-a-secret",
   "username": "alice",
-  "password": "a"
+  "password": "a",
+  "audience": "siak-legacy-api",
+  "scope": "siak:academic:read"
 }
 ```
 
@@ -349,12 +362,18 @@ Refresh-token grant:
   "grant_type": "refresh_token",
   "client_id": "web-client",
   "client_secret": "replace-with-a-secret",
-  "refresh_token": "<refresh_token>"
+  "refresh_token": "<refresh_token>",
+  "audience": "siak-legacy-api",
+  "scope": "siak:academic:read"
 }
 ```
 
-Grant yang diterima adalah `password` dan `refresh_token`. Sukses: HTTP `200`
-dengan response token:
+Grant yang diterima adalah `password` dan `refresh_token`. `audience` harus ada
+di `JWT_ALLOWED_AUDIENCES`; setiap scope yang diminta harus terdaftar sebagai
+permission user (langsung atau melalui role). Scope yang tidak diberikan
+menghasilkan HTTP `403`; audience tidak diizinkan atau field wajib yang hilang
+menghasilkan HTTP `400`. Resource Server menggunakan claim `scope` berupa
+string yang dipisahkan spasi. Sukses: HTTP `200` dengan response token:
 
 ```json
 {
@@ -370,11 +389,22 @@ dengan response token:
 ```
 
 `client_secret` tetap diwajibkan dan diverifikasi, termasuk jika
-`is_confidential` bernilai `false`. Saat ini endpoint memvalidasi grant yang
-didukung, tetapi tidak membandingkannya dengan daftar `grants` pada client.
-Karena itu, konfigurasi `grants` dan `is_confidential` belum menjadi kontrol
-akses efektif pada pertukaran token. Jangan mencatat client secret atau refresh
-token di log.
+`is_confidential` bernilai `false`. Endpoint memvalidasi grant yang didukung;
+konfigurasi `grants` pada client masih belum menjadi kontrol akses efektif.
+Jangan mencatat client secret, password, access token, atau refresh token.
+
+Konfigurasi penandatanganan resource token:
+
+| Environment | Keterangan |
+|---|---|
+| `JWT_ISSUER` | URL issuer absolut; harus cocok dengan `AUTH_ISSUER` pada Resource Server. |
+| `JWT_KEY_ID` | ID kunci RS256 yang dicantumkan sebagai `kid` dan JWKS. |
+| `JWT_ALLOWED_AUDIENCES` | Daftar audience dipisahkan koma, termasuk `siak-legacy-api`. |
+| `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH` | Pasangan kunci RS256; hanya public key tersedia melalui JWKS. |
+
+Tambahkan permission scope ke user/role melalui manajemen Auth Service, misalnya
+`siak:academic:read` dan `siak:academic:write`. Jangan memberikan scope tulis
+kepada akun integrasi baca-saja.
 
 ## 7. User management
 

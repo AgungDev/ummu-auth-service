@@ -125,8 +125,15 @@ func (s *Server) initRoutes() {
 	rg := s.engine.Group("/api/v1")
 
 	// Authentication endpoints
-	authUsecase := usecases.NewAuthUsecase(s.userUsecase, s.clientUsecase, s.permissionUsecase, s.tokenUsecase, s.securityService, s.logger, s.cfg.AppConfig.Name, 15, 24)
-	authCtrl := controllersAPI.NewAuthController(authUsecase, s.securityService, s.googleOIDC, s.logger, s.cfg.AppConfig.Environment == "production")
+	authUsecase := usecases.NewAuthUsecase(s.userUsecase, s.clientUsecase, s.permissionUsecase, s.tokenUsecase, s.securityService, s.logger, s.cfg.JWTConfig.Issuer, 15, 24)
+	authCtrl := controllersAPI.NewAuthController(
+		authUsecase,
+		s.securityService,
+		s.googleOIDC,
+		s.logger,
+		s.cfg.AppConfig.Environment == "production",
+		s.cfg.GoogleOIDCConfig.FrontendCallbackURL,
+	)
 	authCtrl.Route(rg)
 	authCtrl.GoogleRoute(s.engine)
 
@@ -148,17 +155,21 @@ func (s *Server) initRoutes() {
 	// OAuth endpoints remain open for token exchange
 	tokenCtrlConfig := controllersAPI.TokenControllerConfig{
 		AppName:               s.cfg.AppConfig.Name,
+		Issuer:                s.cfg.JWTConfig.Issuer,
+		AllowedAudiences:      s.cfg.JWTConfig.AllowedAudiences,
 		AccessTokenTTLMinutes: 15,
 	}
 	tokenCtrl := controllersAPI.NewTokenController(
 		s.userUsecase,
 		s.clientUsecase,
 		s.tokenUsecase,
+		s.permissionUsecase,
 		s.securityService,
 		tokenCtrlConfig,
 		s.logger,
 	)
 	tokenCtrl.Route(rg)
+	s.engine.GET("/.well-known/jwks.json", tokenCtrl.JWKS)
 
 	s.engine.NoRoute(func(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"success": false, "message": "resource not found"})

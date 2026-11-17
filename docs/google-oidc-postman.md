@@ -8,7 +8,7 @@ Auth Service menggunakan Postman.
 1. Buat OAuth client dengan tipe **Web application**.
 2. Atur nama aplikasi/consent screen menjadi **UMMU Auth Service**.
 3. Tambahkan authorized redirect URI persis:
-   `http://localhost:9001/auth/google/callback`
+   `http://localhost:7000/auth/google/callback`
 4. Simpan OAuth client ID dan client secret.
 
 ## Konfigurasi service
@@ -20,7 +20,8 @@ APP_NAME=UMMU Auth Service
 APP_PORT=9001
 GOOGLE_CLIENT_ID=<OAuth client ID>
 GOOGLE_CLIENT_SECRET=<OAuth client secret>
-GOOGLE_REDIRECT_URL=http://localhost:9001/auth/google/callback
+GOOGLE_REDIRECT_URL=http://localhost:7000/auth/google/callback
+GOOGLE_FRONTEND_CALLBACK_URL=http://localhost:5173/oauth/callback
 ```
 
 Client ID dan secret harus diisi bersama. Jangan simpan secret di repository,
@@ -36,7 +37,9 @@ Restart service setelah konfigurasi dan migrasi selesai.
 
 ## Alur login
 
-1. Buka `http://localhost:9001/auth/google`.
+1. Untuk respons JSON/Postman, buka `http://localhost:7000/auth/google`.
+   Untuk alur login SPA, buka
+   `http://localhost:7000/auth/google?response=frontend`.
 2. Service membuat cookie HttpOnly `google_oauth_state` berumur lima menit
    (SameSite=Lax) dan mengarahkan pengguna ke Google dengan scope `openid`,
    `email`, dan `profile`.
@@ -48,11 +51,13 @@ Restart service setelah konfigurasi dan migrasi selesai.
    berdasarkan email terverifikasi dapat ditautkan; jika akun belum ada,
    service membuat akun autentikasi baru. Data profil mahasiswa, dosen,
    pegawai, dan data bisnis tidak dibuat atau disimpan oleh alur ini.
-6. Callback mengembalikan access token JWT dan refresh token sebagai JSON.
+6. Untuk request biasa, callback mengembalikan access token JWT dan refresh
+   token sebagai JSON. Untuk `response=frontend`, callback mengarahkan browser
+   kembali ke `GOOGLE_FRONTEND_CALLBACK_URL` dan meneruskan token pada URL
+   fragment. Frontend harus segera menghapus fragment setelah membaca token.
 
-Endpoint callback memberikan respons JSON, bukan halaman frontend. Aplikasi
-frontend dapat membaca token dari respons callback bila alur browser dan
-deployment-nya mendukungnya.
+Gunakan URL frontend yang tetap dan tepercaya untuk
+`GOOGLE_FRONTEND_CALLBACK_URL`. Jangan menaruh token pada query string.
 
 ## Pengujian dengan Postman
 

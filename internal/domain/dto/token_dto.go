@@ -2,6 +2,8 @@ package dto
 
 type TokenRequest struct {
 	GrantType    string `json:"grant_type" binding:"required"`
+	Audience     string `json:"audience" binding:"required"`
+	Scope        string `json:"scope" binding:"required"`
 	Username     string `json:"username"`
 	Password     string `json:"password"`
 	ClientID     string `json:"client_id" binding:"required"`

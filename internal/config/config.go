@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -24,14 +26,18 @@ type AppConfig struct {
 }
 
 type JWTConfig struct {
-	PrivateKeyPath string
-	PublicKeyPath  string
+	PrivateKeyPath   string
+	PublicKeyPath    string
+	Issuer           string
+	KeyID            string
+	AllowedAudiences []string
 }
 
 type GoogleOIDCConfig struct {
-	ClientID     string
-	ClientSecret string
-	RedirectURL  string
+	ClientID            string
+	ClientSecret        string
+	RedirectURL         string
+	FrontendCallbackURL string
 }
 
 type Config struct {
@@ -80,13 +86,17 @@ func (c *Config) setConfig() error {
 	// JWTConfig
 	c.JWTConfig.PrivateKeyPath = viper.GetString("JWT_PRIVATE_KEY_PATH")
 	c.JWTConfig.PublicKeyPath = viper.GetString("JWT_PUBLIC_KEY_PATH")
+	c.JWTConfig.Issuer = viper.GetString("JWT_ISSUER")
+	c.JWTConfig.KeyID = viper.GetString("JWT_KEY_ID")
+	c.JWTConfig.AllowedAudiences = splitList(viper.GetString("JWT_ALLOWED_AUDIENCES"))
 
 	// Google OpenID Connect
 	c.GoogleOIDCConfig.ClientID = viper.GetString("GOOGLE_CLIENT_ID")
 	c.GoogleOIDCConfig.ClientSecret = viper.GetString("GOOGLE_CLIENT_SECRET")
 	c.GoogleOIDCConfig.RedirectURL = viper.GetString("GOOGLE_REDIRECT_URL")
+	c.GoogleOIDCConfig.FrontendCallbackURL = viper.GetString("GOOGLE_FRONTEND_CALLBACK_URL")
 	if c.GoogleOIDCConfig.RedirectURL == "" {
-		c.GoogleOIDCConfig.RedirectURL = "http://localhost:9001/auth/google/callback"
+		c.GoogleOIDCConfig.RedirectURL = "http://localhost:7000/auth/google/callback"
 	}
 
 	if c.AppConfig.Name == "" || c.AppConfig.Port == "" || c.AppConfig.Version == "" {
@@ -96,12 +106,32 @@ func (c *Config) setConfig() error {
 	if c.DBConfig.Host == "" || c.DBConfig.Port == "" || c.DBConfig.User == "" || c.DBConfig.Password == "" {
 		return fmt.Errorf("required database configuration is missing")
 	}
+	issuer, err := url.Parse(c.JWTConfig.Issuer)
+	if err != nil || issuer.Scheme == "" || issuer.Host == "" || issuer.User != nil {
+		return fmt.Errorf("JWT_ISSUER must be an absolute URL")
+	}
+	if c.JWTConfig.PrivateKeyPath == "" || c.JWTConfig.PublicKeyPath == "" || c.JWTConfig.KeyID == "" {
+		return fmt.Errorf("JWT key paths and JWT_KEY_ID are required")
+	}
+	if len(c.JWTConfig.AllowedAudiences) == 0 {
+		return fmt.Errorf("JWT_ALLOWED_AUDIENCES must contain at least one audience")
+	}
 
 	if (c.GoogleOIDCConfig.ClientID == "") != (c.GoogleOIDCConfig.ClientSecret == "") {
 		return fmt.Errorf("Google OIDC client ID and client secret must both be configured")
 	}
 
 	return nil
+}
+
+func splitList(value string) []string {
+	items := make([]string, 0)
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func GetConfig() (*Config, error) {

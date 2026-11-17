@@ -11,6 +11,8 @@ type Token struct {
 	UserID           uuid.UUID
 	ClientID         *uuid.UUID
 	RefreshTokenHash string
+	Audience         string
+	Scope            string
 	ExpiresAt        time.Time
 	CreatedAt        time.Time
 }

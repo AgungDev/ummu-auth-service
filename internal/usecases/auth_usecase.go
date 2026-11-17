@@ -194,7 +194,7 @@ func (uc *authUsecase) Introspect(ctx context.Context, token string) (*dto.Intro
 
 	return &dto.IntrospectResponse{
 		Active:      true,
-		User:        map[string]string{"sub": claims.Sub, "iss": claims.Iss},
+		User:        map[string]string{"sub": claims.Subject, "iss": claims.Issuer},
 		Roles:       roles,
 		Permissions: []string{},
 	}, nil

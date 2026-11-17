@@ -93,12 +93,12 @@ Tabel utama:
 
 1. **Login (Password grant - dev/legacy)**
 
-   * Client -> `POST /oauth/token` dengan grant_type=password, username, password, client_id, client_secret
+   * Client -> `POST /api/v1/oauth/token` dengan grant_type=password, username, password, client_id, client_secret
    * Service memverifikasi kredensial -> keluarkan `access_token` (JWT) + `refresh_token`
 2. **Authorization Code (production UI)**
 
    * Client (browser) redirect ke `/oauth/authorize` -> user login -> redirect kembali dengan `code`
-   * Client tukarkan code ke `/oauth/token` -> dapat access + refresh
+   * Client tukarkan code ke `/api/v1/oauth/token` -> dapat access + refresh
 3. **Validasi token oleh service lain**
 
    * API Gateway/service memanggil `/introspect` atau memverifikasi JWT menggunakan public key (recommended)
@@ -144,8 +144,8 @@ Contoh claims minimal:
 ### Public / OAuth endpoints
 
 * `GET /auth/google` — memulai login Google OpenID Connect
-* `GET /auth/google/callback` — callback Google (redirect URI: `http://localhost:9001/auth/google/callback`)
-* `POST /oauth/token` — tukar kredensial / grant code => token
+* `GET /auth/google/callback` — callback Google (redirect URI: `http://localhost:7000/auth/google/callback`)
+* `POST /api/v1/oauth/token` — tukar kredensial / refresh token
 * `GET  /oauth/authorize` — endpoint authorize (user login + consent)
 * `POST /oauth/revoke` — revocation
 * `POST /oauth/introspect` — introspeksi token (opsional jika service lain tidak mau/ bisa verifikasi JWT)
@@ -185,12 +185,17 @@ SIG_KEY_ALGO=RS256
 Untuk mengaktifkan Google OIDC, isi `GOOGLE_CLIENT_ID` dan
 `GOOGLE_CLIENT_SECRET` dari OAuth client bertipe Web application. Atur nama
 consent screen menjadi `UMMU Auth Service` dan daftarkan redirect URI persis
-`http://localhost:9001/auth/google/callback`. Login menggunakan scope `openid`,
+`http://localhost:7000/auth/google/callback`. Untuk mengembalikan hasil login ke
+SPA, atur `GOOGLE_FRONTEND_CALLBACK_URL` ke URL frontend, misalnya
+`http://localhost:5173/oauth/callback`. Login menggunakan scope `openid`,
 `email`, dan `profile`; akun autentikasi hanya menyimpan subject Google.
 Pengguna baru dibuat berdasarkan email terverifikasi Google, dan akun lokal
 dengan email yang sama akan ditautkan ke identitas tersebut.
 Untuk database yang sudah ada, jalankan `migrations/20261115_google_oidc.sql`
 sebelum mengaktifkan login Google; schema instalasi baru sudah memuat indeksnya.
+Sebelum mengaktifkan token SIAK, jalankan
+`migrations/20261116_resource_token_scope.sql` pada database yang sudah ada.
+Refresh token lama harus diterbitkan ulang karena tidak menyimpan audience dan scope.
 
 ---
 
@@ -244,7 +249,7 @@ menggunakan port yang sama.
 
 ```
 # Password grant (dev)
-curl -X POST http://localhost:8080/oauth/token \
+curl -X POST http://localhost:9001/api/v1/oauth/token \
   -d "grant_type=password&username=alice&password=secret&client_id=try-to-schedule&client_secret=xxx"
 
 # Response: {"access_token":"...","token_type":"Bearer","expires_in":900,"refresh_token":"..."}

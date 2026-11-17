@@ -79,7 +79,7 @@ func AuthMiddleware(securityService security.SecurityService, logger loggerpkg.L
 		}
 
 		ctx.Set("jwt_claims", claims)
-		ctx.Set("user_subject", claims.Sub)
+		ctx.Set("user_subject", claims.Subject)
 		ctx.Next()
 	}
 }

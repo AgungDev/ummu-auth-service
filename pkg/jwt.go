@@ -1,18 +1,18 @@
 package pkg
 
 import (
+	"encoding/base64"
 	"errors"
 	"io/ioutil"
+	"math/big"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
 type Claims struct {
-	Sub   string        `json:"sub"`
-	Iss   string        `json:"iss"`
-	Exp   int64         `json:"exp"`
-	Roles []interface{} `json:"roles"`
+	Roles []interface{} `json:"roles,omitempty"`
+	Scope string        `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -25,6 +25,10 @@ func LoadPublicKey(path string) ([]byte, error) {
 }
 
 func GenerateJWTRS256(sub, iss string, roles []interface{}, privateKeyPath string, expireMinutes int) (string, error) {
+	return GenerateResourceJWTRS256(sub, iss, "", "", roles, privateKeyPath, "auth-service", expireMinutes)
+}
+
+func GenerateResourceJWTRS256(sub, iss, audience, scope string, roles []interface{}, privateKeyPath, keyID string, expireMinutes int) (string, error) {
 	keyData, err := LoadPrivateKey(privateKeyPath)
 	if err != nil {
 		return "", err
@@ -33,17 +37,46 @@ func GenerateJWTRS256(sub, iss string, roles []interface{}, privateKeyPath strin
 	if err != nil {
 		return "", err
 	}
+	audiences := jwt.ClaimStrings(nil)
+	if audience != "" {
+		audiences = jwt.ClaimStrings{audience}
+	}
 	claims := Claims{
-		Sub:   sub,
-		Iss:   iss,
-		Exp:   time.Now().Add(time.Duration(expireMinutes) * time.Minute).Unix(),
 		Roles: roles,
+		Scope: scope,
 		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    iss,
+			Subject:   sub,
+			Audience:  audiences,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expireMinutes) * time.Minute)),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = keyID
 	return token.SignedString(privKey)
+}
+
+func PublicJWKS(publicKeyPath, keyID string) (map[string]any, error) {
+	keyData, err := LoadPublicKey(publicKeyPath)
+	if err != nil {
+		return nil, err
+	}
+	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyData)
+	if err != nil {
+		return nil, err
+	}
+	exponent := big.NewInt(int64(publicKey.E)).Bytes()
+	return map[string]any{
+		"keys": []map[string]string{{
+			"kty": "RSA",
+			"use": "sig",
+			"alg": "RS256",
+			"kid": keyID,
+			"n":   base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes()),
+			"e":   base64.RawURLEncoding.EncodeToString(exponent),
+		}},
+	}, nil
 }
 
 func ValidateJWTRS256(tokenString string, publicKeyPath string) (*Claims, error) {

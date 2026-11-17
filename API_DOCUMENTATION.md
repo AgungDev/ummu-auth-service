@@ -208,16 +208,18 @@ Error response (not authorized):
 ## OAuth Token Endpoint
 
 ### Request Token
-POST `/oauth/token`
+POST `/api/v1/oauth/token`
 
 Body (password grant):
 ```json
 {
   "grant_type": "password",
-  "username": "admin",
-  "password": "Password123!",
-  "client_id": "default-client",
-  "client_secret": "secret123"
+  "username": "<username>",
+  "password": "<password>",
+  "client_id": "<client-id>",
+  "client_secret": "<client-secret>",
+  "audience": "siak-legacy-api",
+  "scope": "siak:academic:read"
 }
 ```
 
@@ -225,9 +227,11 @@ Body (refresh_token grant):
 ```json
 {
   "grant_type": "refresh_token",
-  "refresh_token": "...",
-  "client_id": "default-client",
-  "client_secret": "secret123"
+  "refresh_token": "<refresh-token>",
+  "client_id": "<client-id>",
+  "client_secret": "<client-secret>",
+  "audience": "siak-legacy-api",
+  "scope": "siak:academic:read"
 }
 ```
 
@@ -244,6 +248,13 @@ Success response:
   }
 }
 ```
+
+`audience` must be included in `JWT_ALLOWED_AUDIENCES`; each requested scope
+must be assigned to the user as a permission or through a role. `/.well-known/jwks.json`
+publishes the matching RS256 public key. Configure `JWT_ISSUER`, `JWT_KEY_ID`,
+and `JWT_ALLOWED_AUDIENCES` in the Auth Service environment. Refresh requests
+must use the original audience and request only scopes from the original grant;
+refresh tokens issued before the scope metadata migration must be reissued.
 
 ## User Endpoints
 

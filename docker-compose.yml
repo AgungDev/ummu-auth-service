@@ -22,13 +22,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: auth_service
+    expose:
+      - "${APP_PORT}"
     restart: always
     env_file:
       - .env
     depends_on:
       - db
-    ports:
-      - "${APP_PORT}:${APP_PORT}"
     volumes:
       - ./jwt_private.pem:/app/jwt_private.pem:ro
       - ./jwt_public.pem:/app/jwt_public.pem:ro
@@ -49,8 +49,6 @@ services:
       DB_PORT: "5432"
     depends_on:
       - db
-    ports:
-      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
     volumes:
       - .:/app
       - go_mod_cache:/go/pkg/mod
