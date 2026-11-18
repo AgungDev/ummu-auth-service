@@ -96,7 +96,7 @@ func (c *Config) setConfig() error {
 	c.GoogleOIDCConfig.RedirectURL = viper.GetString("GOOGLE_REDIRECT_URL")
 	c.GoogleOIDCConfig.FrontendCallbackURL = viper.GetString("GOOGLE_FRONTEND_CALLBACK_URL")
 	if c.GoogleOIDCConfig.RedirectURL == "" {
-		c.GoogleOIDCConfig.RedirectURL = "http://localhost:7000/auth/google/callback"
+		return fmt.Errorf("required GOOGLE_FRONTEND_CALLBACK_URL value is missing")
 	}
 
 	if c.AppConfig.Name == "" || c.AppConfig.Port == "" || c.AppConfig.Version == "" {
