@@ -19,6 +19,8 @@ Panduan konfigurasi Google OpenID Connect dan Postman collection tersedia di
 [`docs/UMMU Auth Service.postman_collection.json`](docs/UMMU%20Auth%20Service.postman_collection.json).
 Dokumentasi API lengkap, termasuk authentication, OIDC, client, dan RBAC,
 tersedia di [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md).
+Konfigurasi database dan akun dummy lokal tersedia di
+[`docs/database-setup.md`](docs/database-setup.md).
 
 Tech stack utama:
 
@@ -240,8 +242,10 @@ menggunakan port yang sama.
 
 ## Migrasi & Seed
 
-* Gunakan `golang-migrate` atau `goose`.
-* Seed awal: roles (`student`, `dosen`, `admin_fakultas`, `superadmin`), beberapa permissions dasar, default `superadmin` user (random password — minta perubahan saat pertama login).
+Database Compose menggunakan satu nama dari `DB_NAME`. Schema dan akun dummy
+lokal dimuat oleh `migrations/init.sql` saat volume database pertama kali dibuat;
+seeder aplikasi mengisi data client, role, dan permission yang belum ada. Lihat
+[`docs/database-setup.md`](docs/database-setup.md).
 
 ---
 

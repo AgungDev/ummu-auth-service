@@ -84,6 +84,14 @@ Singkatan header pada tabel endpoint:
 | Manajemen user, role, permission, dan client | `/api/v1/users/*`, `/api/v1/roles/*`, `/api/v1/permissions/*`, `/api/v1/clients/*` | Ya |
 | Pertukaran token OAuth | `/api/v1/oauth/token` | Tidak; perlu client credentials |
 | Google OpenID Connect | `/auth/google`, `/auth/google/callback` | Tidak; memakai state cookie dan code Google |
+| Health check | `/api/v1/health` | Tidak |
+
+### Health check
+
+`GET /api/v1/health` memeriksa koneksi Auth Service ke database dan tidak
+memerlukan access token. HTTP `200` berarti service dan database siap; HTTP
+`503` berarti database tidak tersedia. Docker Compose menggunakan endpoint ini
+untuk status health container Auth Service.
 
 Middleware protected memeriksa format dan validitas JWT bearer. Endpoint
 manajemen saat ini belum menerapkan pembatasan role/permission admin secara

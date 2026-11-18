@@ -1,3 +1,4 @@
+-- Compose creates the single database from DB_NAME; this script initializes its schema and local demo user.
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- =====================================================
@@ -28,6 +29,21 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub
     ON users (google_sub)
     WHERE google_sub IS NOT NULL;
+
+INSERT INTO users (
+    username,
+    email,
+    password_hash,
+    full_name,
+    status
+) VALUES (
+    'admin',
+    'admin@example.com',
+    crypt('Password123!', gen_salt('bf', 10)),
+    'Admin User',
+    'active'
+)
+ON CONFLICT DO NOTHING;
 
 -- =====================================================
 -- ROLES

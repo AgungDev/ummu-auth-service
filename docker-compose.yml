@@ -27,11 +27,20 @@ services:
     restart: always
     env_file:
       - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
     depends_on:
       - db
     volumes:
       - ./jwt_private.pem:/app/jwt_private.pem:ro
       - ./jwt_public.pem:/app/jwt_public.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:$${APP_PORT}/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - auth_net
 

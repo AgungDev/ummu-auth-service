@@ -10,6 +10,7 @@ import (
 	"auth_service/internal/usecases"
 	loggerpkg "auth_service/pkg/logger"
 	seederpkg "auth_service/pkg/seeder"
+	"database/sql"
 	"fmt"
 	"io"
 	"log/slog"
@@ -23,6 +24,7 @@ type Server struct {
 	host            string
 	cfg             *config.Config
 	logger          loggerpkg.Logger
+	database        *sql.DB
 	securityService security.SecurityService
 	googleOIDC      services.GoogleOIDCService
 
@@ -52,6 +54,10 @@ func NewServer(cfg *config.Config) (*Server, error) {
 	db, err := config.ConnectDB(dsn, cfg.AppConfig.Name, cfg.AppConfig.Version, cfg.AppConfig.Environment)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database connection pool: %w", err)
 	}
 
 	if err := seederpkg.SeedDummyData(db); err != nil {
@@ -104,6 +110,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		host:                 host,
 		cfg:                  cfg,
 		logger:               logSvc,
+		database:             sqlDB,
 		securityService:      securityService,
 		googleOIDC:           googleOIDC,
 		userRepository:       userRepository,
@@ -123,6 +130,14 @@ func NewServer(cfg *config.Config) (*Server, error) {
 func (s *Server) initRoutes() {
 	s.engine.Use(gin.Recovery(), middleware_http.RequestLoggerMiddleware(s.logger))
 	rg := s.engine.Group("/api/v1")
+
+	healthCtrl := controllersAPI.NewHealthController(
+		s.database,
+		s.cfg.AppConfig.Name,
+		s.cfg.AppConfig.Version,
+		s.logger,
+	)
+	healthCtrl.Route(rg)
 
 	// Authentication endpoints
 	authUsecase := usecases.NewAuthUsecase(s.userUsecase, s.clientUsecase, s.permissionUsecase, s.tokenUsecase, s.securityService, s.logger, s.cfg.JWTConfig.Issuer, 15, 24)
