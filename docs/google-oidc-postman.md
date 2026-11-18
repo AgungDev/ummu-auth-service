@@ -28,6 +28,14 @@ Client ID dan secret harus diisi bersama. Jangan simpan secret di repository,
 Postman collection, atau file yang dibagikan. Saat kedua credential Google
 tidak diisi, endpoint OIDC mengembalikan `503 Service Unavailable`.
 
+Dengan callback `localhost` di atas, login Google hanya berfungsi jika browser
+membuka frontend di komputer yang menjalankan service, misalnya
+`http://localhost:5173`. Jika frontend dibuka dari perangkat lain melalui Wi-Fi,
+`localhost` menunjuk ke perangkat tersebut, bukan komputer server. Untuk akses
+Wi-Fi gunakan login username/password; Google login dari perangkat lain
+memerlukan hostname HTTPS yang valid atau HTTPS tunnel dan URL callback yang
+sama persis di Google Cloud Console.
+
 Untuk database yang sudah dibuat sebelum dukungan Google ditambahkan, jalankan
 SQL pada [`../migrations/20261115_google_oidc.sql`](../migrations/20261115_google_oidc.sql)
 terhadap database Auth Service sebelum login Google digunakan. Instalasi baru
