@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
-	"strings"
 	"unicode/utf8"
 
 	"auth_service/internal/domain"
@@ -59,7 +58,6 @@ func (uc *userUsecase) Register(ctx context.Context, req dto.UserRegisterRequest
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: hashedPassword,
-		FullName:     req.FullName,
 		Status:       "active",
 	}
 
@@ -143,19 +141,10 @@ func (uc *userUsecase) FindOrCreateGoogleUser(ctx context.Context, identity doma
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash generated password: %w", err)
 	}
-	fullName := strings.TrimSpace(identity.Name)
-	if fullName == "" {
-		fullName = identity.Email
-	}
-	if utf8.RuneCountInString(fullName) > 128 {
-		runes := []rune(fullName)
-		fullName = string(runes[:128])
-	}
 	user = &domain.User{
 		Username:     "google_" + hex.EncodeToString(usernameHash[:12]),
 		Email:        identity.Email,
 		PasswordHash: randomPasswordHash,
-		FullName:     fullName,
 		Status:       "active",
 		GoogleSub:    &identity.Subject,
 	}
@@ -187,8 +176,7 @@ func (uc *userUsecase) GetAll(ctx context.Context) ([]domain.User, error) {
 // Update updates user information
 func (uc *userUsecase) Update(ctx context.Context, id uuid.UUID, req dto.UserUpdateRequest) error {
 	user := &domain.User{
-		FullName: req.FullName,
-		Email:    req.Email,
+		Email: req.Email,
 	}
 	return uc.userRepo.Update(ctx, id, user)
 }
@@ -207,9 +195,21 @@ func (uc *userUsecase) ReplaceRoles(ctx context.Context, userID uuid.UUID, roleI
 	return uc.userRepo.ReplaceRoles(ctx, userID, roleIDs)
 }
 
+func (uc *userUsecase) AssignRoleAssignments(ctx context.Context, userID uuid.UUID, assignments []domain.RoleAssignmentInput) error {
+	return uc.userRepo.AssignRoleAssignments(ctx, userID, assignments)
+}
+
+func (uc *userUsecase) ReplaceRoleAssignments(ctx context.Context, userID uuid.UUID, assignments []domain.RoleAssignmentInput) error {
+	return uc.userRepo.ReplaceRoleAssignments(ctx, userID, assignments)
+}
+
 // GetRolesByUserID retrieves roles assigned to a user
 func (uc *userUsecase) GetRolesByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Role, error) {
 	return uc.userRepo.GetRolesByUserID(ctx, userID)
+}
+
+func (uc *userUsecase) GetRoleAssignmentsByUserID(ctx context.Context, userID uuid.UUID) ([]domain.UserRoleAssignment, error) {
+	return uc.userRepo.GetRoleAssignmentsByUserID(ctx, userID)
 }
 
 // RemoveRole removes a role from a user

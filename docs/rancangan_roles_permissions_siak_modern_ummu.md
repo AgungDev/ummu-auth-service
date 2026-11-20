@@ -57,7 +57,7 @@ Model yang direkomendasikan adalah **Hybrid RBAC + ABAC** dengan pengelolaan kat
 | :--- | :--- | :--- |
 | **Subject** | Identitas yang melakukan permintaan. | Pengguna, dosen, mahasiswa, service account. |
 | **Role** | Mengelompokkan tanggung jawab. | `academic_operator`, `lecturer`, `student`. |
-| **Permission** | Menyatakan tindakan terhadap resource. | `student.read`, `academic.grade.update`. |
+| **Permission** | Menyatakan tindakan terhadap resource. | `student:read`, `academic.grade:update`. |
 | **Scope** | Membatasi cakupan data. | `global`, `faculty`, `department`, `unit`, `self`, `assigned`. |
 | **Attribute / Policy** | Memeriksa kondisi dan relasi bisnis. | Dosen hanya mengubah nilai kelas yang diampu. |
 | **Enforcement** | Memutuskan dan menerapkan izin pada request. | API Gateway dan microservice terkait. |
@@ -124,100 +124,100 @@ Role berikut merupakan baseline untuk tahap awal. Penetapan final harus disesuai
 
 ## 5. Katalog Permission
 
-Format kode permission menggunakan pola `resource.action`. Gunakan nama resource dan action yang konsisten, spesifik, serta tidak bergantung pada nama endpoint atau framework.
+Format kode permission menggunakan pola `resource:action`. Gunakan nama resource dan action yang konsisten, spesifik, serta tidak bergantung pada nama endpoint atau framework.
 
 ### 5.1 User & Identity
 
 | Permission | Keterangan |
 | :--- | :--- |
-| `user.read` | Melihat data akun pengguna yang diizinkan. |
-| `user.create` | Membuat akun pengguna. |
-| `user.update` | Memperbarui atribut akun yang diizinkan. |
-| `user.delete` | Menonaktifkan atau menghapus akun sesuai kebijakan retensi. |
-| `user.assign_role` | Memberikan role kepada pengguna. |
-| `user.revoke_role` | Mencabut role dari pengguna. |
-| `user.read_profile` | Melihat profil pengguna. |
-| `user.update_profile` | Memperbarui profil pengguna. |
+| `user:read` | Melihat data akun pengguna yang diizinkan. |
+| `user:create` | Membuat akun pengguna. |
+| `user:update` | Memperbarui atribut akun yang diizinkan. |
+| `user:delete` | Menonaktifkan atau menghapus akun sesuai kebijakan retensi. |
+| `user:assign_role` | Memberikan role kepada pengguna. |
+| `user:revoke_role` | Mencabut role dari pengguna. |
+| `user:read_profile` | Melihat profil pengguna. |
+| `user:update_profile` | Memperbarui profil pengguna. |
 
 ### 5.2 Student Management
 
 | Permission | Keterangan |
 | :--- | :--- |
-| `student.read` | Melihat data mahasiswa sesuai scope. |
-| `student.create` | Membuat data mahasiswa. |
-| `student.update` | Memperbarui data mahasiswa. |
-| `student.delete` | Menghapus atau menonaktifkan data sesuai kebijakan. |
-| `student.read_academic` | Melihat riwayat akademik mahasiswa. |
-| `student.read_personal` | Melihat data pribadi mahasiswa dengan pembatasan khusus. |
-| `student.update_status` | Mengubah status akademik mahasiswa. |
-| `student.export` | Mengekspor data mahasiswa sesuai kewenangan. |
+| `student:read` | Melihat data mahasiswa sesuai scope. |
+| `student:create` | Membuat data mahasiswa. |
+| `student:update` | Memperbarui data mahasiswa. |
+| `student:delete` | Menghapus atau menonaktifkan data sesuai kebijakan. |
+| `student:read_academic` | Melihat riwayat akademik mahasiswa. |
+| `student:read_personal` | Melihat data pribadi mahasiswa dengan pembatasan khusus. |
+| `student:update_status` | Mengubah status akademik mahasiswa. |
+| `student:export` | Mengekspor data mahasiswa sesuai kewenangan. |
 
 ### 5.3 Academic Management
 
 | Permission | Keterangan |
 | :--- | :--- |
-| `academic.course.read` | Melihat data mata kuliah. |
-| `academic.course.manage` | Mengelola data mata kuliah. |
-| `academic.schedule.read` | Melihat jadwal akademik. |
-| `academic.schedule.manage` | Mengelola jadwal akademik. |
-| `academic.krs.read` | Melihat KRS. |
-| `academic.krs.create` | Mengajukan atau mengisi KRS sesuai aturan. |
-| `academic.krs.approve` | Menyetujui KRS sesuai kewenangan. |
-| `academic.grade.read` | Melihat nilai. |
-| `academic.grade.create` | Menginput nilai. |
-| `academic.grade.update` | Memperbarui nilai dalam periode yang diizinkan. |
-| `academic.grade.publish` | Mempublikasikan nilai. |
-| `academic.transcript.read` | Melihat transkrip akademik. |
-| `academic.transcript.export` | Mengekspor transkrip akademik. |
+| `academic.course:read` | Melihat data mata kuliah. |
+| `academic.course:manage` | Mengelola data mata kuliah. |
+| `academic.schedule:read` | Melihat jadwal akademik. |
+| `academic.schedule:manage` | Mengelola jadwal akademik. |
+| `academic.krs:read` | Melihat KRS. |
+| `academic.krs:create` | Mengajukan atau mengisi KRS sesuai aturan. |
+| `academic.krs:approve` | Menyetujui KRS sesuai kewenangan. |
+| `academic.grade:read` | Melihat nilai. |
+| `academic.grade:create` | Menginput nilai. |
+| `academic.grade:update` | Memperbarui nilai dalam periode yang diizinkan. |
+| `academic.grade:publish` | Mempublikasikan nilai. |
+| `academic.transcript:read` | Melihat transkrip akademik. |
+| `academic.transcript:export` | Mengekspor transkrip akademik. |
 
 ### 5.4 Lecturer Management
 
 | Permission | Keterangan |
 | :--- | :--- |
-| `lecturer.read` | Melihat data dosen. |
-| `lecturer.manage` | Mengelola data dosen. |
-| `lecturer.assignment.read` | Melihat penugasan dosen. |
-| `lecturer.assignment.manage` | Mengelola penugasan dosen. |
-| `lecturer.attendance.manage` | Mengelola presensi perkuliahan sesuai penugasan. |
+| `lecturer:read` | Melihat data dosen. |
+| `lecturer:manage` | Mengelola data dosen. |
+| `lecturer.assignment:read` | Melihat penugasan dosen. |
+| `lecturer.assignment:manage` | Mengelola penugasan dosen. |
+| `lecturer.attendance:manage` | Mengelola presensi perkuliahan sesuai penugasan. |
 
 ### 5.5 Finance & Payment
 
 | Permission | Keterangan |
 | :--- | :--- |
-| `finance.billing.read` | Melihat tagihan. |
-| `finance.billing.create` | Membuat tagihan. |
-| `finance.billing.update` | Memperbarui tagihan sesuai aturan. |
-| `finance.transaction.read` | Melihat transaksi. |
-| `finance.transaction.create` | Membuat transaksi atau pencatatan transaksi. |
-| `finance.transaction.verify` | Memverifikasi transaksi. |
-| `finance.transaction.refund` | Memproses pengembalian dana sesuai otorisasi. |
-| `finance.report.read` | Melihat laporan keuangan. |
-| `finance.report.export` | Mengekspor laporan keuangan. |
+| `finance.billing:read` | Melihat tagihan. |
+| `finance.billing:create` | Membuat tagihan. |
+| `finance.billing:update` | Memperbarui tagihan sesuai aturan. |
+| `finance.transaction:read` | Melihat transaksi. |
+| `finance.transaction:create` | Membuat transaksi atau pencatatan transaksi. |
+| `finance.transaction:verify` | Memverifikasi transaksi. |
+| `finance.transaction:refund` | Memproses pengembalian dana sesuai otorisasi. |
+| `finance.report:read` | Melihat laporan keuangan. |
+| `finance.report:export` | Mengekspor laporan keuangan. |
 
 ### 5.6 Administration
 
 | Permission | Keterangan |
 | :--- | :--- |
-| `administration.document.read` | Melihat dokumen administrasi. |
-| `administration.document.create` | Membuat dokumen administrasi. |
-| `administration.document.update` | Memperbarui dokumen administrasi. |
-| `administration.document.approve` | Menyetujui dokumen sesuai kewenangan. |
-| `administration.report.read` | Melihat laporan administrasi. |
-| `administration.report.export` | Mengekspor laporan administrasi. |
+| `administration.document:read` | Melihat dokumen administrasi. |
+| `administration.document:create` | Membuat dokumen administrasi. |
+| `administration.document:update` | Memperbarui dokumen administrasi. |
+| `administration.document:approve` | Menyetujui dokumen sesuai kewenangan. |
+| `administration.report:read` | Melihat laporan administrasi. |
+| `administration.report:export` | Mengekspor laporan administrasi. |
 
 ### 5.7 System & Security
 
 | Permission | Keterangan |
 | :--- | :--- |
-| `system.config.read` | Melihat konfigurasi sistem. |
-| `system.config.update` | Mengubah konfigurasi sistem. |
-| `system.audit.read` | Membaca audit log. |
-| `system.role.read` | Melihat katalog role. |
-| `system.role.manage` | Mengelola role. |
-| `system.permission.read` | Melihat katalog permission. |
-| `system.permission.manage` | Mengelola katalog permission. |
-| `system.client.manage` | Mengelola OAuth client dan kredensial terkait. |
-| `system.access.manage` | Mengelola kebijakan dan penetapan akses. |
+| `system.config:read` | Melihat konfigurasi sistem. |
+| `system.config:update` | Mengubah konfigurasi sistem. |
+| `system.audit:read` | Membaca audit log. |
+| `system.role:read` | Melihat katalog role. |
+| `system.role:manage` | Mengelola role. |
+| `system.permission:read` | Melihat katalog permission. |
+| `system.permission:manage` | Mengelola katalog permission. |
+| `system.client:manage` | Mengelola OAuth client dan kredensial terkait. |
+| `system.access:manage` | Mengelola kebijakan dan penetapan akses. |
 
 ---
 
@@ -227,16 +227,16 @@ Matriks berikut adalah contoh baseline, bukan matriks final. Tanda centang menun
 
 | Permission | Student | Lecturer | Academic Operator | Finance Operator |
 | :--- | :---: | :---: | :---: | :---: |
-| `student.read` | ✓* | ✓† | ✓ | — |
-| `student.create` | — | — | ✓ | — |
-| `student.update` | — | — | ✓ | — |
-| `academic.krs.read` | ✓* | ✓† | ✓ | — |
-| `academic.krs.create` | ✓* | — | — | — |
-| `academic.krs.approve` | — | — | ✓ | — |
-| `academic.grade.read` | ✓* | ✓† | ✓ | — |
-| `academic.grade.create` | — | ✓† | — | — |
-| `finance.billing.read` | ✓* | — | — | ✓ |
-| `finance.transaction.verify` | — | — | — | ✓ |
+| `student:read` | ✓* | ✓† | ✓ | — |
+| `student:create` | — | — | ✓ | — |
+| `student:update` | — | — | ✓ | — |
+| `academic.krs:read` | ✓* | ✓† | ✓ | — |
+| `academic.krs:create` | ✓* | — | — | — |
+| `academic.krs:approve` | — | — | ✓ | — |
+| `academic.grade:read` | ✓* | ✓† | ✓ | — |
+| `academic.grade:create` | — | ✓† | — | — |
+| `finance.billing:read` | ✓* | — | — | ✓ |
+| `finance.transaction:verify` | — | — | — | ✓ |
 
 *\* Mahasiswa hanya untuk data miliknya sendiri (scope `self`).*  
 *† Dosen hanya untuk mahasiswa atau kelas yang terkait dengan penugasan yang sah (scope `assigned`).*
@@ -258,7 +258,7 @@ Scope menentukan batas data yang dapat diakses oleh suatu penetapan role. Scope 
 
 ### 7.1 Contoh penetapan role berscope
 
-Contoh konseptual: seorang operator akademik ditetapkan dengan role `academic_operator` dan scope fakultas `FAC-001`. Ia dapat menjalankan permission `student.read` dan `academic.krs.approve`, tetapi hanya terhadap data yang berada dalam cakupan fakultas tersebut.
+Contoh konseptual: seorang operator akademik ditetapkan dengan role `academic_operator` dan scope fakultas `FAC-001`. Ia dapat menjalankan permission `student:read` dan `academic.krs:approve`, tetapi hanya terhadap data yang berada dalam cakupan fakultas tersebut.
 
 ### 7.2 Contoh aturan ABAC
 
@@ -316,14 +316,20 @@ Token sebaiknya memuat klaim minimum seperti `sub`, `iss`, `aud`, `exp`, dan inf
 ```json
 {
   "sub": "user-uuid",
-  "iss": "ummu-auth",
-  "aud": ["ummu-api-gateway"],
+  "iss": "https://auth.ummu.ac.id",
+  "aud": ["siak-api"],
+  "principal_type": "user",
   "roles": ["academic_operator"],
-  "scope": {
-    "type": "faculty",
-    "id": "FAC-001"
-  },
-  "exp": 1794841200
+  "permissions": ["student:read", "academic.krs:approve"],
+  "access_contexts": [
+    {
+      "role": "academic_operator",
+      "scope": {"type": "faculty", "id": "FAC-001"},
+      "permissions": ["student:read", "academic.krs:approve"]
+    }
+  ],
+  "exp": 1794841200,
+  "jti": "token-uuid"
 }
 ```
 
@@ -389,7 +395,7 @@ Rancangan authorization SIAK Modern UMMU mengusulkan penggunaan **Hybrid RBAC + 
 | Elemen | Format | Contoh |
 | :--- | :--- | :--- |
 | **Role code** | `snake_case` | `academic_operator` |
-| **Permission code** | `resource.action` | `academic.grade.update` |
+| **Permission code** | `resource:action` | `academic.grade:update` |
 | **Scope type** | `snake_case` | `faculty`, `department`, `self`, `assigned` |
 | **Service client** | nama layanan yang unik | `siak-legacy-api` |
 | **Audit action** | kata kerja + objek | `role.assign`, `permission.revoke` |

@@ -4,6 +4,7 @@ import (
 	"auth_service/internal/domain"
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -38,7 +39,9 @@ func (r *tokenRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.T
 // FindByRefreshTokenHash finds a token by refresh token hash
 func (r *tokenRepository) FindByRefreshTokenHash(ctx context.Context, refreshTokenHash string) (*domain.Token, error) {
 	var token domain.Token
-	if err := r.db.WithContext(ctx).Where("refresh_token_hash = ?", refreshTokenHash).First(&token).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("refresh_token_hash = ? AND is_revoked = FALSE AND expires_at > CURRENT_TIMESTAMP", refreshTokenHash).
+		First(&token).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -62,6 +65,22 @@ func (r *tokenRepository) FindByUserID(ctx context.Context, userID uuid.UUID) (*
 // Update updates an existing token
 func (r *tokenRepository) Update(ctx context.Context, id uuid.UUID, token *domain.Token) error {
 	return r.db.WithContext(ctx).Model(&domain.Token{}).Where("id = ?", id).Updates(token).Error
+}
+
+func (r *tokenRepository) Rotate(ctx context.Context, id uuid.UUID, oldHash, newHash string, expiresAt time.Time) error {
+	result := r.db.WithContext(ctx).Model(&domain.Token{}).
+		Where("id = ? AND refresh_token_hash = ? AND is_revoked = FALSE AND expires_at > CURRENT_TIMESTAMP", id, oldHash).
+		Updates(map[string]interface{}{
+			"refresh_token_hash": newHash,
+			"expires_at":         expiresAt,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // Delete deletes a token by ID

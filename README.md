@@ -10,7 +10,7 @@
 
 * Otentikasi (login) pengguna
 * Otorisasi (RBAC — role & permission)
-* Mengeluarkan dan memverifikasi token (OAuth2 flows + JWT)
+* Mengeluarkan user access token dan service access token berbasis JWT
 * Manajemen client application (API clients yang dipakai internal seperti `gateway`, `portal-mahasiswa`, `admin-panel`)
 * Endpoint introspeksi/validasi token untuk service lain
 
@@ -19,6 +19,8 @@ Panduan konfigurasi Google OpenID Connect dan Postman collection tersedia di
 [`docs/UMMU Auth Service.postman_collection.json`](docs/UMMU%20Auth%20Service.postman_collection.json).
 Dokumentasi API lengkap, termasuk authentication, OIDC, client, dan RBAC,
 tersedia di [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md).
+Panduan pemindahan nama lengkap ke Profile Service tersedia di
+[`docs/PROFILE_SERVICE_MIGRATION.md`](docs/PROFILE_SERVICE_MIGRATION.md).
 Konfigurasi database dan akun dummy lokal tersedia di
 [`docs/database-setup.md`](docs/database-setup.md).
 
@@ -27,7 +29,7 @@ Tech stack utama:
 * Golang (minimal Go 1.20)
 * Clean Architecture (domain/usecase/repository/controller)
 * GORM (ORM, PostgreSQL)
-* OAuth2 (go-oauth2 / ory hydra sebagai referensi — implementasi di service: Authorization Code + Password + Refresh)
+* OAuth client credentials untuk komunikasi antarlayanan; password grant tidak didukung
 * JWT (signed using RS256 — gunakan keypair)
 * Docker + docker-compose untuk dev
 
@@ -38,16 +40,18 @@ Tech stack utama:
 * Menyediakan central auth untuk seluruh microservices kampus
 * Menegakkan kebijakan akses: siapa boleh akses apa
 * Mudah di-integrasikan oleh API Gateway (mis. `api_gateway` akan memanggil endpoint introspect)
-* Fase awal: internal clients + password grant untuk legacy. Fase produksi: pakai Authorization Code PKCE untuk UI web/mobile.
+* User login memakai endpoint Auth/OIDC first-party yang sudah ada; OAuth Client Credentials hanya untuk service client. Password Grant tidak didukung.
+* Authorization Code + PKCE belum tersedia untuk OAuth public clients.
 
 ---
 
 ## Konsep domain (secara ringkas)
 
 * **User** — entitas pengguna (student, lecturer, staff, superadmin)
-* **Role** — kumpulan permissions (contoh: `student`, `dosen`, `admin_fakultas`, `superadmin`)
-* **Permission** — aksi spesifik (contoh: `grades:read`, `grades:write`, `courses:manage`)
-* **Client** — aplikasi yang memakai auth (gateway, mobile app)
+* **Role** — kumpulan permission dengan satu atau lebih data access context
+* **Permission** — aksi spesifik bagi user principal (contoh: `student:read`)
+* **OAuth scope** — izin client service (contoh: `student:read`), terpisah dari RBAC permission
+* **Client** — principal service dengan allowlist audience dan OAuth scope
 * **Token** — access token (JWT), refresh token (opaque atau juga JWT)
 
 ---
@@ -79,13 +83,14 @@ auth_service/
 
 Tabel utama:
 
-* `users` (id, username, email, password_hash, full_name, is_active, created_at, updated_at)
+* `users` (id, username, email, password_hash, status, created_at, updated_at)
 * `roles` (id, name, description)
 * `permissions` (id, name, description)
 * `role_permissions` (role_id, permission_id)
-* `user_roles` (user_id, role_id)
-* `clients` (id, client_id, client_secret_hash, redirect_uris, grants, is_confidential)
-* `tokens` (id, user_id, client_id, refresh_token_hash, expires_at)
+* `user_roles` (user_id, role_id, scope_type, scope_id)
+* `clients` plus allowlist tables `client_scopes`, `client_audiences`, and `client_access_contexts`
+* `client_grants` and `client_redirect_uris`
+* `refresh_tokens` (user_id, client_id, refresh_token_hash, audience, scope, expires_at)
 
 > Tips: jangan simpan password atau client secret secara plain — hash dengan argon2id / bcrypt.
 
@@ -93,14 +98,14 @@ Tabel utama:
 
 ## Alur Otentikasi & Otorisasi (singkat)
 
-1. **Login (Password grant - dev/legacy)**
+1. **User authentication**
 
-   * Client -> `POST /api/v1/oauth/token` dengan grant_type=password, username, password, client_id, client_secret
-   * Service memverifikasi kredensial -> keluarkan `access_token` (JWT) + `refresh_token`
-2. **Authorization Code (production UI)**
+   * Aplikasi pihak pertama menggunakan `POST /api/v1/auth/login` atau Google OIDC.
+   * Token user memuat `principal_type=user`, `roles`, `permissions`, dan `access_contexts`.
+2. **Service-to-service authentication**
 
-   * Client (browser) redirect ke `/oauth/authorize` -> user login -> redirect kembali dengan `code`
-   * Client tukarkan code ke `/api/v1/oauth/token` -> dapat access + refresh
+   * Client confidential menukar credential melalui `POST /api/v1/oauth/token` dengan `grant_type=client_credentials`.
+   * Token client memuat `principal_type=client`, `client_id` (UUID client), `aud`, `scope`, dan optional `access_contexts`; tidak memuat role atau permission user.
 3. **Validasi token oleh service lain**
 
    * API Gateway/service memanggil `/introspect` atau memverifikasi JWT menggunakan public key (recommended)
@@ -111,13 +116,13 @@ Security notes: gunakan HTTPS, RS256 untuk JWT (private key aman di KMS / vault)
 
 ## RBAC: contoh implementasi
 
-Permissions: string namespace-style, contoh:
+Permissions use `resource:action`, contoh:
 
-* `courses:read`
-* `courses:write`
-* `grades:read`
-* `grades:write`
-* `users:manage`
+* `course:read`
+* `course:write`
+* `grade:read`
+* `grade:write`
+* `user:manage`
 
 Role -> Permission mapping disimpan di `role_permissions`.
 
@@ -127,15 +132,20 @@ Contoh claims minimal:
 
 ```json
 {
-  "sub": "user:123",
-  "iss": "auth.ummu-malu",
-  "exp": 1712345678,
-  "roles": [
+  "sub": "user-uuid",
+  "iss": "https://auth.ummu.ac.id",
+  "principal_type": "user",
+  "exp": 1790000900,
+  "jti": "token-uuid",
+  "roles": ["student"],
+  "permissions": ["course:read", "profile:read"],
+  "access_contexts": [
     {
-        "role": "student",
-        "permissions": ["courses:read","profile:read"]
-    },
-  ],
+      "role": "student",
+      "scope": {"type": "self", "id": "user-uuid"},
+      "permissions": ["course:read", "profile:read"]
+    }
+  ]
 }
 ```
 
@@ -147,8 +157,8 @@ Contoh claims minimal:
 
 * `GET /auth/google` — memulai login Google OpenID Connect
 * `GET /auth/google/callback` — callback Google (redirect URI: `http://localhost:7000/auth/google/callback`)
-* `POST /api/v1/oauth/token` — tukar kredensial / refresh token
-* `GET  /oauth/authorize` — endpoint authorize (user login + consent)
+* `POST /api/v1/oauth/token` — client credentials; password grant ditolak
+* `GET /api/v1/auth/authorize` — belum tersedia; Authorization Code + PKCE belum didukung
 * `POST /oauth/revoke` — revocation
 * `POST /oauth/introspect` — introspeksi token (opsional jika service lain tidak mau/ bisa verifikasi JWT)
 
@@ -180,7 +190,6 @@ JWT_PRIVATE_KEY_PATH=/run/secrets/jwt_private.pem
 JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public.pem
 ACCESS_TOKEN_EXPIRE_MINUTES=15
 REFRESH_TOKEN_EXPIRE_DAYS=30
-OAUTH_ALLOW_PASSWORD_GRANT=true
 SIG_KEY_ALGO=RS256
 ```
 
@@ -195,9 +204,12 @@ Pengguna baru dibuat berdasarkan email terverifikasi Google, dan akun lokal
 dengan email yang sama akan ditautkan ke identitas tersebut.
 Untuk database yang sudah ada, jalankan `migrations/20261115_google_oidc.sql`
 sebelum mengaktifkan login Google; schema instalasi baru sudah memuat indeksnya.
-Sebelum mengaktifkan token SIAK, jalankan
-`migrations/20261116_resource_token_scope.sql` pada database yang sudah ada.
-Refresh token lama harus diterbitkan ulang karena tidak menyimpan audience dan scope.
+Untuk database yang sudah ada, jalankan migration terbaru secara berurutan,
+termasuk `migrations/20261120_authz_principals_scopes.sql` dan
+`migrations/20261121_permission_codes_resource_action.sql` serta
+`migrations/20261122_client_uuid_identity.sql`. Refresh token yang
+telah tersimpan dalam bentuk plaintext akan di-hash oleh migration
+authorization; migration berikutnya menormalkan kode permission legacy.
 
 ---
 
@@ -206,12 +218,7 @@ Refresh token lama harus diterbitkan ulang karena tidak menyimpan audience dan s
 * `docker-compose.yml` untuk dev: postgres, migration, auth_service
 * Gunakan secrets untuk private key dan client secrets
 
-### Menjalankan mode development tanpa build image aplikasi
-
-Mode ini menjalankan PostgreSQL di Docker dan menjalankan aplikasi Go dari source
-yang di-mount ke container. Air akan build ulang dan restart aplikasi ketika file
-`.go` disimpan. Docker tetap perlu mengunduh image Go dan PostgreSQL saat pertama
-kali dijalankan, tetapi tidak perlu menjalankan `docker build` untuk aplikasi.
+### Menjalankan aplikasi
 
 1. Salin `.env.example` menjadi `.env`, lalu sesuaikan konfigurasi database:
 
@@ -226,25 +233,23 @@ kali dijalankan, tetapi tidak perlu menjalankan `docker build` untuk aplikasi.
    openssl rsa -in jwt_private.pem -pubout -out jwt_public.pem
    ```
 
-3. Jalankan database dan aplikasi development:
+3. Build dan jalankan database serta aplikasi:
 
    ```powershell
-   docker compose --profile dev up db auth_service_dev
+   docker compose up --build db auth_service
    ```
 
-   Perubahan file `.go` akan memicu restart otomatis; hentikan dengan `Ctrl+C`.
-
-Service `auth_service` yang memakai Dockerfile tetap tersedia untuk menjalankan
-mode biasa. Jangan jalankan kedua service aplikasi bersamaan karena keduanya
-menggunakan port yang sama.
+   Setelah mengubah source code, jalankan kembali perintah tersebut agar image
+   aplikasi dibangun ulang. Log aplikasi dapat dilihat dengan
+   `docker compose logs -f auth_service`.
 
 ---
 
 ## Migrasi & Seed
 
-Database Compose menggunakan satu nama dari `DB_NAME`. Schema dan akun dummy
-lokal dimuat oleh `migrations/init.sql` saat volume database pertama kali dibuat;
-seeder aplikasi mengisi data client, role, dan permission yang belum ada. Lihat
+Database Compose menggunakan satu nama dari `DB_NAME`. Schema dimuat oleh
+`migrations/init.sql`; seeder hanya membuat akun dan service client demo saat
+`APP_ENV=development`. Lihat
 [`docs/database-setup.md`](docs/database-setup.md).
 
 ---
@@ -252,11 +257,12 @@ seeder aplikasi mengisi data client, role, dan permission yang belum ada. Lihat
 ## Contoh alur pembuatan token (curl)
 
 ```
-# Password grant (dev)
-curl -X POST http://localhost:9001/api/v1/oauth/token \
-  -d "grant_type=password&username=alice&password=secret&client_id=try-to-schedule&client_secret=xxx"
+# Client Credentials grant (development only)
+curl -X POST http://localhost:9001/api/v1/oauth/token `
+  -H "Content-Type: application/x-www-form-urlencoded" `
+  -d "grant_type=client_credentials&client_id=CLIENT_UUID&client_secret=secret123&audience=siak-legacy-api&scope=student%3Aread"
 
-# Response: {"access_token":"...","token_type":"Bearer","expires_in":900,"refresh_token":"..."}
+# Response: {"access_token":"...","token_type":"Bearer","expires_in":900,"scope":"student:read"}
 ```
 
 ---

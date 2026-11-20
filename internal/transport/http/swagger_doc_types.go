@@ -4,13 +4,12 @@ type RegisterRequest struct {
 	Username string `json:"username" example:"johndoe"`
 	Email    string `json:"email" example:"john.doe@example.com"`
 	Password string `json:"password" example:"secret123"`
-	FullName string `json:"full_name" example:"John Doe"`
 }
 
 type LoginRequest struct {
 	Username string `json:"username" example:"johndoe"`
 	Password string `json:"password" example:"secret123"`
-	ClientID string `json:"client_id" example:"gateway-app"`
+	ClientID string `json:"client_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 }
 
 type RefreshTokenRequest struct {
@@ -29,7 +28,6 @@ type UserResponse struct {
 	ID       string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Username string `json:"username" example:"johndoe"`
 	Email    string `json:"email" example:"john.doe@example.com"`
-	FullName string `json:"full_name" example:"John Doe"`
 	Status   string `json:"status" example:"active"`
 }
 

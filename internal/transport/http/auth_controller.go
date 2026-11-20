@@ -58,6 +58,8 @@ func (c *AuthController) Route(rg *gin.RouterGroup) {
 
 	protected := authGroup.Group("")
 	protected.Use(middleware.AuthMiddleware(c.security, c.logger))
+	protected.Use(middleware.RequireAudience("auth-service"))
+	protected.Use(middleware.RequirePrincipalType("user"))
 	protected.GET("/me", c.Me)
 	protected.POST("/check-permission", c.CheckPermission)
 	protected.GET("/permissions", c.GetPermissions)
@@ -251,7 +253,6 @@ func (c *AuthController) Register(ctx *gin.Context) {
 		ID:       user.ID.String(),
 		Username: user.Username,
 		Email:    user.Email,
-		FullName: user.FullName,
 		Status:   user.Status,
 	}
 
@@ -568,7 +569,7 @@ func (c *AuthController) Authorize(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := c.authUsecase.Authorize(ctx.Request.Context(), claims.Subject, claims.Roles, req)
+	resp, err := c.authUsecase.Authorize(ctx.Request.Context(), claims.Subject, req)
 	if err != nil {
 		switch err {
 		case usecases.ErrUserIDMismatch:

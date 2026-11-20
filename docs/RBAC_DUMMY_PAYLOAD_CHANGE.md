@@ -62,7 +62,7 @@ Contoh assignment lama:
 ## 3. Sesudah perubahan
 
 Seeder sekarang menggunakan role terpisah sesuai domain dan permission dengan
-format `resource.action`. Contoh payload tetap kompatibel dengan DTO saat ini.
+format `resource:action`. Contoh payload tetap kompatibel dengan DTO saat ini.
 
 Contoh membuat role:
 
@@ -92,7 +92,7 @@ Contoh membuat permission:
 
 ```json
 {
-  "code": "academic.grade.update",
+  "code": "academic.grade:update",
   "name": "Ubah nilai",
   "description": "Memperbarui nilai dalam periode yang diizinkan"
 }
@@ -105,7 +105,7 @@ Response:
   "message": "Permission created successfully",
   "data": {
     "id": "20000000-0000-0000-0000-000000000009",
-    "code": "academic.grade.update",
+    "code": "academic.grade:update",
     "name": "Ubah nilai",
     "description": "Memperbarui nilai dalam periode yang diizinkan"
   }
@@ -138,7 +138,7 @@ Contoh payload cek permission:
 
 ```json
 {
-  "permission": "academic.grade.update"
+  "permission": "academic.grade:update"
 }
 ```
 
@@ -154,20 +154,21 @@ Response:
 
 | Role | Permission utama |
 |---|---|
-| `super_admin` | `system.role.manage`, `system.permission.manage`, `system.audit.read` |
-| `academic_operator` | `student.read`, `student.create`, `student.update`, `academic.krs.read`, `academic.krs.approve`, `academic.grade.read` |
-| `lecturer` | `student.read`, `academic.krs.read`, `academic.grade.read`, `academic.grade.create`, `academic.grade.update` |
-| `student` | `student.read`, `academic.krs.read`, `academic.krs.create`, `academic.grade.read`, `finance.billing.read`, `finance.transaction.read` |
-| `finance_operator` | `finance.billing.read`, `finance.transaction.read`, `finance.transaction.verify` |
+| `super_admin` | `system.role:manage`, `system.permission:manage`, `system.client:manage`, `user:create`, `profile.admin:read` |
+| `academic_operator` | `student:read`, `student:create`, `student:update`, `academic.krs:read`, `academic.krs:approve`, `academic.grade:read` |
+| `lecturer` | `student:read`, `academic.krs:read`, `academic.grade:read`, `academic.grade:create`, `academic.grade:update` |
+| `student` | `student:read`, `academic.krs:read`, `academic.krs:create`, `academic.grade:read`, `finance.billing:read`, `finance.transaction:read` |
+| `finance_operator` | `finance.billing:read`, `finance.transaction:read`, `finance.transaction:verify` |
 
 ## 5. Perubahan kompatibilitas
 
 * Code lama `all:access`, `student:read`, `student:update`, dan `profile:read`
   tidak lagi menjadi baseline data seed.
-* Code baru memakai satu format konsisten: `resource.action`.
-* Assignments API tetap memakai array UUID pada field `role_ids` dan
-  `permission_ids`; tidak ada perubahan nama field pada DTO saat ini.
-* Scope dan masa berlaku belum ditambahkan ke tabel `user_roles` pada implementasi
-  seed ini. Nilai seperti `faculty`, `department`, `self`, dan `assigned`
-  mengikuti rancangan [RBAC](rancangan_roles_permissions_siak_modern_ummu.md)
-  dan membutuhkan migration payload/kolom tambahan sebelum digunakan.
+* Migration `20261121_permission_codes_resource_action.sql` mengubah kode legacy
+  `resource.action` ke bentuk standar `resource:action` tanpa mengubah relasi
+  role maupun user-permission.
+* Payload `role_ids` lama tetap diterima sebagai assignment `none`; gunakan
+  `assignments` untuk menetapkan scope `global`, `faculty`, `department`, `unit`,
+  `self`, atau `assigned`.
+* `permission_ids` tetap menggunakan UUID dan permission terikat ke access
+  context role saat token user diterbitkan.

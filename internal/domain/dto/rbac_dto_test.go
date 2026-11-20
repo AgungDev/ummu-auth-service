@@ -11,7 +11,6 @@ func TestUserRegisterRequestAllowsShortPassword(t *testing.T) {
 		Username: "alice",
 		Email:    "alice@example.com",
 		Password: "a",
-		FullName: "Alice Example",
 	}
 
 	if err := binding.Validator.ValidateStruct(request); err != nil {

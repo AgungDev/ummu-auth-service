@@ -4,7 +4,6 @@ type UserRegisterRequest struct {
 	Username string `json:"username" binding:"required"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
-	FullName string `json:"full_name" binding:"required"`
 }
 
 type UserLoginRequest struct {
@@ -17,11 +16,9 @@ type UserResponse struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
-	FullName string `json:"full_name"`
 	Status   string `json:"status"`
 }
 
 type UserUpdateRequest struct {
-	FullName string `json:"full_name"`
-	Email    string `json:"email"`
+	Email string `json:"email"`
 }

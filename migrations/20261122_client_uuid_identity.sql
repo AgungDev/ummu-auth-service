@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE clients
+    DROP COLUMN IF EXISTS client_id;
+
+COMMIT;

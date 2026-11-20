@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
@@ -29,19 +30,19 @@ func NewUserController(userUsecase usecases.UserUsecaseInterface, logger loggerp
 func (c *userController) Route(rg *gin.RouterGroup) {
 	userGroup := rg.Group("/users")
 	{
-		userGroup.POST("", c.Create)
-		userGroup.GET("/:id", c.GetByID)
-		userGroup.GET("", c.GetAll)
-		userGroup.PUT("/:id", c.Update)
-		userGroup.DELETE("/:id", c.Delete)
-		userGroup.POST("/:id/roles", c.AssignRoles)
-		userGroup.PUT("/:id/roles", c.ReplaceRoles)
-		userGroup.GET("/:id/roles", c.GetRoles)
-		userGroup.DELETE("/:id/roles/:roleId", c.RemoveRole)
-		userGroup.POST("/:id/permissions", c.AssignPermissions)
-		userGroup.PUT("/:id/permissions", c.ReplacePermissions)
-		userGroup.GET("/:id/permissions", c.GetPermissions)
-		userGroup.DELETE("/:id/permissions/:permissionId", c.RemovePermission)
+		userGroup.POST("", middleware.RequirePermission("user:create"), c.Create)
+		userGroup.GET("/:id", middleware.RequirePermission("user:read"), c.GetByID)
+		userGroup.GET("", middleware.RequirePermission("user:read"), c.GetAll)
+		userGroup.PUT("/:id", middleware.RequirePermission("user:update"), c.Update)
+		userGroup.DELETE("/:id", middleware.RequirePermission("user:delete"), c.Delete)
+		userGroup.POST("/:id/roles", middleware.RequirePermission("user:assign_role"), c.AssignRoles)
+		userGroup.PUT("/:id/roles", middleware.RequirePermission("user:assign_role"), c.ReplaceRoles)
+		userGroup.GET("/:id/roles", middleware.RequirePermission("user:read"), c.GetRoles)
+		userGroup.DELETE("/:id/roles/:roleId", middleware.RequirePermission("user:revoke_role"), c.RemoveRole)
+		userGroup.POST("/:id/permissions", middleware.RequirePermission("system.access:manage"), c.AssignPermissions)
+		userGroup.PUT("/:id/permissions", middleware.RequirePermission("system.access:manage"), c.ReplacePermissions)
+		userGroup.GET("/:id/permissions", middleware.RequirePermission("user:read"), c.GetPermissions)
+		userGroup.DELETE("/:id/permissions/:permissionId", middleware.RequirePermission("system.access:manage"), c.RemovePermission)
 	}
 }
 
@@ -66,7 +67,6 @@ func (c *userController) GetByID(ctx *gin.Context) {
 		ID:       user.ID.String(),
 		Username: user.Username,
 		Email:    user.Email,
-		FullName: user.FullName,
 		Status:   user.Status,
 	}
 
@@ -90,7 +90,6 @@ func (c *userController) GetAll(ctx *gin.Context) {
 			ID:       user.ID.String(),
 			Username: user.Username,
 			Email:    user.Email,
-			FullName: user.FullName,
 			Status:   user.Status,
 		})
 	}
@@ -165,7 +164,6 @@ func (c *userController) Create(ctx *gin.Context) {
 		ID:       user.ID.String(),
 		Username: user.Username,
 		Email:    user.Email,
-		FullName: user.FullName,
 		Status:   user.Status,
 	}
 
@@ -189,17 +187,13 @@ func (c *userController) AssignRoles(ctx *gin.Context) {
 		return
 	}
 
-	roleIDs := make([]uuid.UUID, 0, len(req.RoleIDs))
-	for _, roleID := range req.RoleIDs {
-		parsed, err := uuid.Parse(roleID)
-		if err != nil {
-			JSONError(ctx, http.StatusBadRequest, "invalid role id")
-			return
-		}
-		roleIDs = append(roleIDs, parsed)
+	assignments, err := parseRoleAssignments(userID, req.RoleIDs, req.Assignments)
+	if err != nil {
+		JSONError(ctx, http.StatusBadRequest, err.Error())
+		return
 	}
 
-	if err := c.userUsecase.AssignRoles(ctx.Request.Context(), userID, roleIDs); err != nil {
+	if err := c.userUsecase.AssignRoleAssignments(ctx.Request.Context(), userID, assignments); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "assign roles failed: "+err.Error())
 		if errors.Is(err, domain.ErrNotFound) {
 			JSONError(ctx, http.StatusNotFound, "user or role not found")
@@ -225,12 +219,25 @@ func (c *userController) ReplaceRoles(ctx *gin.Context) {
 		JSONError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	roleIDs, err := parseUUIDs(*req.RoleIDs, "role")
+	if (req.RoleIDs == nil) == (req.Assignments == nil) {
+		JSONError(ctx, http.StatusBadRequest, "provide either role_ids or assignments")
+		return
+	}
+	var assignments []domain.RoleAssignmentInput
+	if req.RoleIDs != nil {
+		if len(*req.RoleIDs) > 0 {
+			assignments, err = parseRoleAssignments(userID, *req.RoleIDs, nil)
+		}
+	} else {
+		if len(*req.Assignments) > 0 {
+			assignments, err = parseRoleAssignments(userID, nil, *req.Assignments)
+		}
+	}
 	if err != nil {
 		JSONError(ctx, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := c.userUsecase.ReplaceRoles(ctx.Request.Context(), userID, roleIDs); err != nil {
+	if err := c.userUsecase.ReplaceRoleAssignments(ctx.Request.Context(), userID, assignments); err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "replace user roles failed: "+err.Error())
 		if errors.Is(err, domain.ErrNotFound) {
 			JSONError(ctx, http.StatusNotFound, "user or role not found")
@@ -252,7 +259,7 @@ func (c *userController) GetRoles(ctx *gin.Context) {
 		return
 	}
 
-	roles, err := c.userUsecase.GetRolesByUserID(ctx.Request.Context(), userID)
+	assignments, err := c.userUsecase.GetRoleAssignmentsByUserID(ctx.Request.Context(), userID)
 	if err != nil {
 		c.logger.Error(correlationID, "", "anonymous", "get user roles failed: "+err.Error())
 		if errors.Is(err, domain.ErrNotFound) {
@@ -263,13 +270,15 @@ func (c *userController) GetRoles(ctx *gin.Context) {
 		return
 	}
 
-	resp := make([]dto.RoleResponse, 0, len(roles))
-	for _, role := range roles {
-		resp = append(resp, dto.RoleResponse{
-			ID:          role.ID.String(),
-			Code:        role.Code,
-			Name:        role.Name,
-			Description: role.Description,
+	resp := make([]dto.UserRoleResponse, 0, len(assignments))
+	for _, assignment := range assignments {
+		resp = append(resp, dto.UserRoleResponse{
+			ID:          assignment.Role.ID.String(),
+			Code:        assignment.Role.Code,
+			Name:        assignment.Role.Name,
+			Description: assignment.Role.Description,
+			ScopeType:   assignment.ScopeType,
+			ScopeID:     assignment.ScopeID,
 		})
 	}
 
@@ -448,4 +457,51 @@ func parseUUIDs(values []string, resource string) ([]uuid.UUID, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+func parseRoleAssignments(userID uuid.UUID, roleIDs []string, inputs []dto.RoleScopeAssignment) ([]domain.RoleAssignmentInput, error) {
+	if len(roleIDs) > 0 && len(inputs) > 0 {
+		return nil, errors.New("provide role_ids or assignments, not both")
+	}
+	assignments := make([]domain.RoleAssignmentInput, 0, len(roleIDs)+len(inputs))
+	for _, roleID := range roleIDs {
+		inputs = append(inputs, dto.RoleScopeAssignment{RoleID: roleID, ScopeType: "none"})
+	}
+	if len(inputs) == 0 {
+		return nil, errors.New("at least one role assignment is required")
+	}
+	for _, input := range inputs {
+		roleID, err := uuid.Parse(input.RoleID)
+		if err != nil {
+			return nil, errors.New("invalid role id")
+		}
+		scopeType := strings.TrimSpace(input.ScopeType)
+		if scopeType == "" {
+			scopeType = "none"
+		}
+		scopeID := strings.TrimSpace(input.ScopeID)
+		switch scopeType {
+		case "none", "global":
+			if scopeID != "" {
+				return nil, fmt.Errorf("%s scope must not include scope_id", scopeType)
+			}
+		case "self":
+			if scopeID != "" && scopeID != userID.String() {
+				return nil, errors.New("self scope_id must match the user")
+			}
+			scopeID = userID.String()
+		case "faculty", "department", "unit", "assigned":
+			if scopeID == "" {
+				return nil, fmt.Errorf("%s scope requires scope_id", scopeType)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported scope_type %q", scopeType)
+		}
+		assignments = append(assignments, domain.RoleAssignmentInput{
+			RoleID:    roleID,
+			ScopeType: scopeType,
+			ScopeID:   scopeID,
+		})
+	}
+	return assignments, nil
 }

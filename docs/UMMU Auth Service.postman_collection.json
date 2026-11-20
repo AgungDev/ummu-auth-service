@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3e75b96b-4376-4b6f-9f4f-4b69a2609001",
     "name": "UMMU Auth Service",
-    "description": "Auth Service API and Google OpenID Connect flow. See google-oidc-postman.md for setup and browser/Postman cookie instructions.",
+    "description": "Auth Service, RBAC, OAuth Client Credentials, and Google OpenID Connect. Users receive RBAC claims; service clients receive OAuth scopes. See ummu_authorixation.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -12,7 +12,7 @@
     },
     {
       "key": "username",
-      "value": "agung"
+      "value": "arjun0nur"
     },
     {
       "key": "password",
@@ -20,11 +20,7 @@
     },
     {
       "key": "email",
-      "value": "ganzide404@gmail.com"
-    },
-    {
-      "key": "full_name",
-      "value": "Arjun Nurdin"
+      "value": "arjun0nur@gmail.com"
     },
     {
       "key": "user_id",
@@ -55,13 +51,23 @@
       "value": ""
     },
     {
-      "key": "client_internal_id",
+      "key": "oauth_client_id",
       "value": "",
       "type": "string"
     },
     {
-      "key": "oauth_client_id",
-      "value": "web-client",
+      "key": "client_secret",
+      "value": "secret123",
+      "type": "string"
+    },
+    {
+      "key": "resource_audience",
+      "value": "siak-legacy-api",
+      "type": "string"
+    },
+    {
+      "key": "service_access_token",
+      "value": "",
       "type": "string"
     }
   ],
@@ -155,7 +161,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"full_name\": \"{{full_name}}\"\n}",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -199,6 +205,7 @@
                   "if (body.data && body.data.access_token && body.data.refresh_token) {",
                   "    pm.collectionVariables.set('access_token', body.data.access_token);",
                   "    pm.collectionVariables.set('refresh_token', body.data.refresh_token);",
+                  "    if (body.data.user && body.data.user.id) pm.collectionVariables.set('user_id', body.data.user.id);",
                   "}"
                 ]
               }
@@ -275,6 +282,93 @@
       ]
     },
     {
+      "name": "OAuth Client Credentials",
+      "description": "Service principal tokens carry client_id, audience, OAuth scope, and optional access contexts; no user roles or permissions.",
+      "item": [
+        {
+          "name": "Request service access token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "grant_type", "value": "client_credentials", "type": "text"},
+                {"key": "client_id", "value": "{{oauth_client_id}}", "type": "text"},
+                {"key": "client_secret", "value": "{{client_secret}}", "type": "text"},
+                {"key": "audience", "value": "{{resource_audience}}", "type": "text"},
+                {"key": "scope", "value": "student:read", "type": "text"}
+              ]
+            },
+            "url": "{{baseUrl}}/api/v1/oauth/token",
+            "description": "Uses a confidential client registered with the client_credentials grant, allowed audience, and requested scope."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Client Credentials grant succeeds', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const body = pm.response.json();",
+                  "pm.test('Response follows OAuth token shape', function () {",
+                  "    pm.expect(body.access_token).to.be.a('string');",
+                  "    pm.expect(body.token_type).to.eql('Bearer');",
+                  "    pm.expect(body.scope).to.eql('student:read');",
+                  "    pm.expect(body.refresh_token).to.be.undefined;",
+                  "});",
+                  "if (body.access_token) pm.collectionVariables.set('service_access_token', body.access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject ungranted client scope",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {"key": "grant_type", "value": "client_credentials", "type": "text"},
+                {"key": "client_id", "value": "{{oauth_client_id}}", "type": "text"},
+                {"key": "client_secret", "value": "{{client_secret}}", "type": "text"},
+                {"key": "audience", "value": "{{resource_audience}}", "type": "text"},
+                {"key": "scope", "value": "student:delete", "type": "text"}
+              ]
+            },
+            "url": "{{baseUrl}}/api/v1/oauth/token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Client cannot request an ungranted scope', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "RBAC",
       "item": [
         {
@@ -293,7 +387,7 @@
                 "url": "{{baseUrl}}/api/v1/users",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"username\": \"alice\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"a\",\n  \"full_name\": \"Alice Example\"\n}",
+                  "raw": "{\n  \"username\": \"alice\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"example\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -343,7 +437,7 @@
                 "url": "{{baseUrl}}/api/v1/users/{{user_id}}",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"email\": \"alice@example.com\",\n  \"full_name\": \"Alice Example\"\n}",
+                  "raw": "{\n  \"email\": \"alice@example.com\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -389,7 +483,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"role_ids\": [\"{{role_id}}\"]\n}",
+                  "raw": "{\n  \"assignments\": [\n    {\n      \"role_id\": \"{{role_id}}\",\n      \"scope_type\": \"faculty\",\n      \"scope_id\": \"faculty-uuid\"\n    }\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -415,7 +509,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"role_ids\": [\"{{role_id}}\"]\n}",
+                  "raw": "{\n  \"assignments\": [\n    {\n      \"role_id\": \"{{role_id}}\",\n      \"scope_type\": \"faculty\",\n      \"scope_id\": \"faculty-uuid\"\n    }\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -804,7 +898,7 @@
                 "url": "{{baseUrl}}/api/v1/clients",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"client_id\": \"web-client\",\n  \"name\": \"Web Application\",\n  \"client_secret\": \"replace-with-a-secret\",\n  \"redirect_uris\": [\n    \"http://localhost:3000/auth/callback\"\n  ],\n  \"grants\": [\n    \"password\",\n    \"refresh_token\"\n  ],\n  \"is_confidential\": true\n}",
+                  "raw": "{\n  \"name\": \"SIAK Legacy API\",\n  \"client_secret\": \"{{client_secret}}\",\n  \"redirect_uris\": [],\n  \"grants\": [\"client_credentials\"],\n  \"scopes\": [\"student:read\"],\n  \"audiences\": [\"{{resource_audience}}\"],\n  \"access_contexts\": [],\n  \"is_confidential\": true,\n  \"status\": \"active\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -819,8 +913,7 @@
                     "type": "text/javascript",
                     "exec": [
                       "const body = pm.response.json();",
-                      "if (body.data && body.data.id) pm.collectionVariables.set(\"client_internal_id\", body.data.id);",
-                      "if (body.data && body.data.client_id) pm.collectionVariables.set(\"oauth_client_id\", body.data.client_id);"
+                      "if (body.data && body.data.id) pm.collectionVariables.set(\"oauth_client_id\", body.data.id);"
                     ]
                   }
                 }
@@ -832,14 +925,28 @@
                 "method": "GET",
                 "header": [],
                 "url": "{{baseUrl}}/api/v1/clients"
-              }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const body = pm.response.json();",
+                      "const clients = body.data || [];",
+                      "const demoClient = clients.find(function (client) { return client.name === 'SIAK Legacy API'; });",
+                      "if (demoClient && demoClient.id) pm.collectionVariables.set('oauth_client_id', demoClient.id);"
+                    ]
+                  }
+                }
+              ]
             },
             {
               "name": "Get client",
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/clients/{{client_internal_id}}"
+                "url": "{{baseUrl}}/api/v1/clients/{{oauth_client_id}}"
               }
             },
             {
@@ -852,10 +959,10 @@
                     "value": "application/json"
                   }
                 ],
-                "url": "{{baseUrl}}/api/v1/clients/{{client_internal_id}}",
+                "url": "{{baseUrl}}/api/v1/clients/{{oauth_client_id}}",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"client_id\": \"web-client\",\n  \"name\": \"Web Application\",\n  \"client_secret\": \"replace-with-a-secret\",\n  \"redirect_uris\": [\n    \"http://localhost:3000/auth/callback\"\n  ],\n  \"grants\": [\n    \"password\",\n    \"refresh_token\"\n  ],\n  \"is_confidential\": true\n}",
+                  "raw": "{\n  \"name\": \"SIAK Legacy API\",\n  \"client_secret\": \"{{client_secret}}\",\n  \"redirect_uris\": [],\n  \"grants\": [\"client_credentials\"],\n  \"scopes\": [\"student:read\"],\n  \"audiences\": [\"{{resource_audience}}\"],\n  \"access_contexts\": [],\n  \"is_confidential\": true,\n  \"status\": \"active\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -869,7 +976,7 @@
               "request": {
                 "method": "DELETE",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/clients/{{client_internal_id}}"
+                "url": "{{baseUrl}}/api/v1/clients/{{oauth_client_id}}"
               }
             }
           ]

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"auth_service/internal/security"
+	"auth_service/pkg"
 	loggerpkg "auth_service/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
@@ -80,6 +81,71 @@ func AuthMiddleware(securityService security.SecurityService, logger loggerpkg.L
 
 		ctx.Set("jwt_claims", claims)
 		ctx.Set("user_subject", claims.Subject)
+		ctx.Set("principal_type", claims.PrincipalType)
 		ctx.Next()
 	}
+}
+
+func RequirePrincipalType(principalType string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		claims, ok := claimsFromContext(ctx)
+		if !ok || claims.PrincipalType != principalType {
+			ctx.JSON(http.StatusForbidden, gin.H{"success": false, "message": "principal is not allowed"})
+			ctx.Abort()
+			return
+		}
+		ctx.Next()
+	}
+}
+
+func RequireAudience(audience string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		claims, ok := claimsFromContext(ctx)
+		if !ok {
+			ctx.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "verified token claims are missing"})
+			ctx.Abort()
+			return
+		}
+		for _, current := range claims.Audience {
+			if current == audience {
+				ctx.Next()
+				return
+			}
+		}
+		ctx.JSON(http.StatusForbidden, gin.H{"success": false, "message": "token audience is not allowed"})
+		ctx.Abort()
+	}
+}
+
+func RequirePermission(permission string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		claims, ok := claimsFromContext(ctx)
+		if !ok || claims.PrincipalType != "user" {
+			ctx.JSON(http.StatusForbidden, gin.H{"success": false, "message": "user principal is required"})
+			ctx.Abort()
+			return
+		}
+		for _, accessContext := range claims.AccessContexts {
+			if accessContext.Scope.Type != "global" {
+				continue
+			}
+			for _, granted := range accessContext.Permissions {
+				if granted == permission {
+					ctx.Next()
+					return
+				}
+			}
+		}
+		ctx.JSON(http.StatusForbidden, gin.H{"success": false, "message": "permission denied"})
+		ctx.Abort()
+	}
+}
+
+func claimsFromContext(ctx *gin.Context) (*pkg.Claims, bool) {
+	raw, ok := ctx.Get("jwt_claims")
+	if !ok {
+		return nil, false
+	}
+	claims, ok := raw.(*pkg.Claims)
+	return claims, ok
 }

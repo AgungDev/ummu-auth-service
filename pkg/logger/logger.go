@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 )
 
 type Logger interface {
@@ -22,9 +23,18 @@ type loggerImpl struct {
 }
 
 func NewLogger(serviceName, serviceVersion, environment string) Logger {
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{AddSource: false})
+	level := slog.LevelDebug
+	if strings.EqualFold(strings.TrimSpace(environment), "production") {
+		level = slog.LevelWarn
+	}
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		AddSource: false,
+		Level:     level,
+	})
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
 	return &loggerImpl{
-		logger:         slog.New(handler),
+		logger:         logger,
 		serviceName:    serviceName,
 		serviceVersion: serviceVersion,
 		environment:    environment,

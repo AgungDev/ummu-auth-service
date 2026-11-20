@@ -14,6 +14,7 @@ type Token struct {
 	Audience         string
 	Scope            string
 	ExpiresAt        time.Time
+	IsRevoked        bool
 	CreatedAt        time.Time
 }
 

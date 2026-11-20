@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(64) UNIQUE NOT NULL,
     email VARCHAR(128) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    full_name VARCHAR(128),
     google_sub TEXT,
     status VARCHAR(20) NOT NULL DEFAULT 'inactive'
         CHECK (status IN (
@@ -29,21 +28,6 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub
     ON users (google_sub)
     WHERE google_sub IS NOT NULL;
-
-INSERT INTO users (
-    username,
-    email,
-    password_hash,
-    full_name,
-    status
-) VALUES (
-    'admin',
-    'admin@example.com',
-    crypt('Password123!', gen_salt('bf', 10)),
-    'Admin User',
-    'active'
-)
-ON CONFLICT DO NOTHING;
 
 -- =====================================================
 -- ROLES
@@ -80,8 +64,10 @@ CREATE TABLE IF NOT EXISTS permissions (
 CREATE TABLE IF NOT EXISTS user_roles (
     user_id UUID NOT NULL,
     role_id UUID NOT NULL,
+    scope_type VARCHAR(32) NOT NULL DEFAULT 'none',
+    scope_id VARCHAR(128) NOT NULL DEFAULT '',
 
-    PRIMARY KEY (user_id, role_id),
+    PRIMARY KEY (user_id, role_id, scope_type, scope_id),
 
     CONSTRAINT fk_user_roles_user
         FOREIGN KEY (user_id)
@@ -143,7 +129,6 @@ CREATE TABLE IF NOT EXISTS user_permissions (
 
 CREATE TABLE IF NOT EXISTS clients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    client_id VARCHAR(128) UNIQUE NOT NULL,
     client_secret_hash VARCHAR(255) NOT NULL,
     name VARCHAR(128) NOT NULL,
     is_confidential BOOLEAN NOT NULL DEFAULT TRUE,
@@ -155,6 +140,25 @@ CREATE TABLE IF NOT EXISTS clients (
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS client_scopes (
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    scope VARCHAR(128) NOT NULL,
+    PRIMARY KEY (client_id, scope)
+);
+
+CREATE TABLE IF NOT EXISTS client_audiences (
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    audience VARCHAR(255) NOT NULL,
+    PRIMARY KEY (client_id, audience)
+);
+
+CREATE TABLE IF NOT EXISTS client_access_contexts (
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    scope_type VARCHAR(32) NOT NULL,
+    scope_id VARCHAR(128) NOT NULL DEFAULT '',
+    PRIMARY KEY (client_id, scope_type, scope_id)
 );
 
 CREATE TABLE IF NOT EXISTS client_grants (
@@ -245,6 +249,9 @@ ON user_permissions(permission_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user
 ON refresh_tokens(user_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_refresh_tokens_hash
+ON refresh_tokens(refresh_token_hash);
+
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_client
 ON refresh_tokens(client_id);
 
@@ -254,9 +261,6 @@ ON refresh_tokens(expires_at);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_revoked
 ON refresh_tokens(is_revoked);
 
-CREATE INDEX IF NOT EXISTS idx_clients_client_id
-ON clients(client_id);
-
 CREATE INDEX IF NOT EXISTS idx_client_grants_client
 ON client_grants(client_id);
 
@@ -265,3 +269,9 @@ ON client_grants(grant_type);
 
 CREATE INDEX IF NOT EXISTS idx_client_redirect_uris_client
 ON client_redirect_uris(client_id);
+
+CREATE INDEX IF NOT EXISTS idx_client_scopes_client
+ON client_scopes(client_id);
+
+CREATE INDEX IF NOT EXISTS idx_client_audiences_client
+ON client_audiences(client_id);

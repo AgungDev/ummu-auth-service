@@ -105,18 +105,41 @@ func (r *userRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 // AssignRoles assigns roles to a user
 func (r *userRepository) AssignRoles(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error {
+	assignments := make([]domain.RoleAssignmentInput, 0, len(roleIDs))
+	for _, roleID := range roleIDs {
+		assignments = append(assignments, domain.RoleAssignmentInput{RoleID: roleID, ScopeType: "none"})
+	}
+	return r.AssignRoleAssignments(ctx, userID, assignments)
+}
+
+func (r *userRepository) ReplaceRoles(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error {
+	assignments := make([]domain.RoleAssignmentInput, 0, len(roleIDs))
+	for _, roleID := range roleIDs {
+		assignments = append(assignments, domain.RoleAssignmentInput{RoleID: roleID, ScopeType: "none"})
+	}
+	return r.ReplaceRoleAssignments(ctx, userID, assignments)
+}
+
+func (r *userRepository) AssignRoleAssignments(ctx context.Context, userID uuid.UUID, assignments []domain.RoleAssignmentInput) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := ensureRecordExists(tx, &domain.User{}, userID); err != nil {
 			return err
 		}
+		roleIDs := make([]uuid.UUID, 0, len(assignments))
+		for _, assignment := range assignments {
+			roleIDs = append(roleIDs, assignment.RoleID)
+		}
 		if err := ensureRecordsExist(tx, &domain.Role{}, roleIDs); err != nil {
 			return err
 		}
-		for _, roleID := range roleIDs {
+		for _, assignment := range assignments {
 			if err := tx.Exec(
-				"INSERT INTO user_roles (user_id, role_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+				`INSERT INTO user_roles (user_id, role_id, scope_type, scope_id)
+				VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 				userID,
-				roleID,
+				assignment.RoleID,
+				assignment.ScopeType,
+				assignment.ScopeID,
 			).Error; err != nil {
 				return err
 			}
@@ -125,10 +148,14 @@ func (r *userRepository) AssignRoles(ctx context.Context, userID uuid.UUID, role
 	})
 }
 
-func (r *userRepository) ReplaceRoles(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error {
+func (r *userRepository) ReplaceRoleAssignments(ctx context.Context, userID uuid.UUID, assignments []domain.RoleAssignmentInput) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := ensureRecordExists(tx, &domain.User{}, userID); err != nil {
 			return err
+		}
+		roleIDs := make([]uuid.UUID, 0, len(assignments))
+		for _, assignment := range assignments {
+			roleIDs = append(roleIDs, assignment.RoleID)
 		}
 		if err := ensureRecordsExist(tx, &domain.Role{}, roleIDs); err != nil {
 			return err
@@ -136,11 +163,14 @@ func (r *userRepository) ReplaceRoles(ctx context.Context, userID uuid.UUID, rol
 		if err := tx.Exec("DELETE FROM user_roles WHERE user_id = ?", userID).Error; err != nil {
 			return err
 		}
-		for _, roleID := range roleIDs {
+		for _, assignment := range assignments {
 			if err := tx.Exec(
-				"INSERT INTO user_roles (user_id, role_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+				`INSERT INTO user_roles (user_id, role_id, scope_type, scope_id)
+				VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 				userID,
-				roleID,
+				assignment.RoleID,
+				assignment.ScopeType,
+				assignment.ScopeID,
 			).Error; err != nil {
 				return err
 			}
@@ -156,16 +186,56 @@ func (r *userRepository) GetRolesByUserID(ctx context.Context, userID uuid.UUID)
 	}
 	roles := make([]domain.Role, 0)
 	err := r.db.WithContext(ctx).Raw(
-		`SELECT r.*
+		`SELECT DISTINCT r.*
 		FROM roles r
 		JOIN user_roles ur ON ur.role_id = r.id
-		WHERE ur.user_id = ?`,
+		WHERE ur.user_id = ?
+		ORDER BY r.code`,
 		userID,
 	).Scan(&roles).Error
 	if err != nil {
 		return nil, err
 	}
 	return roles, nil
+}
+
+func (r *userRepository) GetRoleAssignmentsByUserID(ctx context.Context, userID uuid.UUID) ([]domain.UserRoleAssignment, error) {
+	if err := ensureRecordExists(r.db.WithContext(ctx), &domain.User{}, userID); err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		ID          uuid.UUID
+		Code        string
+		Name        string
+		Description string
+		ScopeType   string
+		ScopeID     string
+	}
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT r.id, r.code, r.name, r.description, ur.scope_type, ur.scope_id
+		FROM user_roles ur
+		JOIN roles r ON r.id = ur.role_id
+		WHERE ur.user_id = ?
+		ORDER BY r.code, ur.scope_type, ur.scope_id`,
+		userID,
+	).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	assignments := make([]domain.UserRoleAssignment, 0, len(rows))
+	for _, row := range rows {
+		assignments = append(assignments, domain.UserRoleAssignment{
+			Role: domain.Role{
+				ID:          row.ID,
+				Code:        row.Code,
+				Name:        row.Name,
+				Description: row.Description,
+			},
+			ScopeType: row.ScopeType,
+			ScopeID:   row.ScopeID,
+		})
+	}
+	return assignments, nil
 }
 
 // RemoveRole removes a role assignment from a user

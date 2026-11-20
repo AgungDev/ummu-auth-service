@@ -7,7 +7,6 @@ type User struct {
 	Username     string
 	Email        string
 	PasswordHash string
-	FullName     string
 	Status       string
 	GoogleSub    *string `gorm:"type:text;uniqueIndex" json:"-"`
 }
@@ -16,5 +15,4 @@ type GoogleIdentity struct {
 	Subject       string
 	Email         string
 	EmailVerified bool
-	Name          string
 }

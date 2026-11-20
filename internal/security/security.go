@@ -8,8 +8,7 @@ import (
 type SecurityService interface {
 	HashPassword(password string) (string, error)
 	CheckPasswordHash(password, hash string) bool
-	GenerateJWT(sub, iss string, roles []interface{}, expireMinutes int) (string, error)
-	GenerateResourceJWT(sub, iss, audience, scope string, roles []interface{}, expireMinutes int) (string, error)
+	GenerateToken(claims pkg.Claims, expireMinutes int) (string, error)
 	PublicJWKS() (map[string]any, error)
 	ValidateJWT(tokenString string) (*pkg.Claims, error)
 }
@@ -30,12 +29,8 @@ func (s *securityService) CheckPasswordHash(password, hash string) bool {
 	return pkg.CheckPasswordHash(password, hash)
 }
 
-func (s *securityService) GenerateJWT(sub, iss string, roles []interface{}, expireMinutes int) (string, error) {
-	return pkg.GenerateResourceJWTRS256(sub, iss, "", "", roles, s.jwtConfig.PrivateKeyPath, s.jwtConfig.KeyID, expireMinutes)
-}
-
-func (s *securityService) GenerateResourceJWT(sub, iss, audience, scope string, roles []interface{}, expireMinutes int) (string, error) {
-	return pkg.GenerateResourceJWTRS256(sub, iss, audience, scope, roles, s.jwtConfig.PrivateKeyPath, s.jwtConfig.KeyID, expireMinutes)
+func (s *securityService) GenerateToken(claims pkg.Claims, expireMinutes int) (string, error) {
+	return pkg.GenerateSignedJWT(claims, s.jwtConfig.PrivateKeyPath, s.jwtConfig.KeyID, expireMinutes)
 }
 
 func (s *securityService) PublicJWKS() (map[string]any, error) {
@@ -43,5 +38,10 @@ func (s *securityService) PublicJWKS() (map[string]any, error) {
 }
 
 func (s *securityService) ValidateJWT(tokenString string) (*pkg.Claims, error) {
-	return pkg.ValidateJWTRS256(tokenString, s.jwtConfig.PublicKeyPath)
+	return pkg.ValidateJWTRS256(
+		tokenString,
+		s.jwtConfig.PublicKeyPath,
+		s.jwtConfig.Issuer,
+		s.jwtConfig.AllowedAudiences,
+	)
 }

@@ -28,11 +28,11 @@ func NewPermissionController(permissionUsecase usecases.PermissionUsecaseInterfa
 func (c *permissionController) Route(rg *gin.RouterGroup) {
 	permissionGroup := rg.Group("/permissions")
 	{
-		permissionGroup.POST("", c.Create)
-		permissionGroup.GET("/:id", c.GetByID)
-		permissionGroup.GET("", c.GetAll)
-		permissionGroup.PUT("/:id", c.Update)
-		permissionGroup.DELETE("/:id", c.Delete)
+		permissionGroup.POST("", middleware.RequirePermission("system.permission:manage"), c.Create)
+		permissionGroup.GET("/:id", middleware.RequirePermission("system.permission:read"), c.GetByID)
+		permissionGroup.GET("", middleware.RequirePermission("system.permission:read"), c.GetAll)
+		permissionGroup.PUT("/:id", middleware.RequirePermission("system.permission:manage"), c.Update)
+		permissionGroup.DELETE("/:id", middleware.RequirePermission("system.permission:manage"), c.Delete)
 	}
 }
 

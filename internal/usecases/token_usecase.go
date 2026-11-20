@@ -51,6 +51,10 @@ func (uc *tokenUsecase) Update(ctx context.Context, id uuid.UUID, token *domain.
 	return uc.tokenRepo.Update(ctx, id, token)
 }
 
+func (uc *tokenUsecase) Rotate(ctx context.Context, id uuid.UUID, oldHash, newHash string, expiresAt time.Time) error {
+	return uc.tokenRepo.Rotate(ctx, id, oldHash, newHash, expiresAt)
+}
+
 // Delete removes a token
 func (uc *tokenUsecase) Delete(ctx context.Context, id uuid.UUID) error {
 	return uc.tokenRepo.Delete(ctx, id)

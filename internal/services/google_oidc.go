@@ -72,7 +72,6 @@ func (s *googleOIDCService) VerifyCallback(ctx context.Context, code, nonce stri
 		Subject       string `json:"sub"`
 		Email         string `json:"email"`
 		EmailVerified bool   `json:"email_verified"`
-		Name          string `json:"name"`
 		Nonce         string `json:"nonce"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
@@ -86,6 +85,5 @@ func (s *googleOIDCService) VerifyCallback(ctx context.Context, code, nonce stri
 		Subject:       claims.Subject,
 		Email:         claims.Email,
 		EmailVerified: claims.EmailVerified,
-		Name:          claims.Name,
 	}, nil
 }

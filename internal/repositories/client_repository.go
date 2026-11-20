@@ -31,19 +31,7 @@ func (r *clientRepository) Create(ctx context.Context, client *domain.Client) er
 // FindByID finds a client by ID
 func (r *clientRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Client, error) {
 	var client domain.Client
-	if err := r.db.WithContext(ctx).Preload("Grants").Preload("RedirectURIs").Where("id = ?", id).First(&client).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &client, nil
-}
-
-// FindByClientID finds a client by client_id
-func (r *clientRepository) FindByClientID(ctx context.Context, clientID string) (*domain.Client, error) {
-	var client domain.Client
-	if err := r.db.WithContext(ctx).Preload("Grants").Preload("RedirectURIs").Where("client_id = ?", clientID).First(&client).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Grants").Preload("RedirectURIs").Preload("Scopes").Preload("Audiences").Preload("AccessContexts").Where("id = ?", id).First(&client).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -55,7 +43,7 @@ func (r *clientRepository) FindByClientID(ctx context.Context, clientID string) 
 // FindAll retrieves all clients
 func (r *clientRepository) FindAll(ctx context.Context) ([]domain.Client, error) {
 	var clients []domain.Client
-	if err := r.db.WithContext(ctx).Preload("Grants").Preload("RedirectURIs").Find(&clients).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Grants").Preload("RedirectURIs").Preload("Scopes").Preload("Audiences").Preload("AccessContexts").Find(&clients).Error; err != nil {
 		return nil, err
 	}
 	return clients, nil
@@ -65,10 +53,10 @@ func (r *clientRepository) FindAll(ctx context.Context) ([]domain.Client, error)
 func (r *clientRepository) Update(ctx context.Context, id uuid.UUID, client *domain.Client) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&domain.Client{}).Where("id = ?", id).Updates(map[string]interface{}{
-			"client_id":          client.ClientID,
 			"name":               client.Name,
 			"client_secret_hash": client.ClientSecretHash,
 			"is_confidential":    client.IsConfidential,
+			"status":             client.Status,
 		})
 		if result.Error != nil {
 			return result.Error
@@ -82,11 +70,29 @@ func (r *clientRepository) Update(ctx context.Context, id uuid.UUID, client *dom
 		if err := tx.Where("client_id = ?", id).Delete(&domain.ClientRedirectURI{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("client_id = ?", id).Delete(&domain.ClientScope{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("client_id = ?", id).Delete(&domain.ClientAudience{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("client_id = ?", id).Delete(&domain.ClientAccessContext{}).Error; err != nil {
+			return err
+		}
 		for i := range client.Grants {
 			client.Grants[i].ClientID = id
 		}
 		for i := range client.RedirectURIs {
 			client.RedirectURIs[i].ClientID = id
+		}
+		for i := range client.Scopes {
+			client.Scopes[i].ClientID = id
+		}
+		for i := range client.Audiences {
+			client.Audiences[i].ClientID = id
+		}
+		for i := range client.AccessContexts {
+			client.AccessContexts[i].ClientID = id
 		}
 		if len(client.Grants) > 0 {
 			if err := tx.Create(&client.Grants).Error; err != nil {
@@ -95,6 +101,21 @@ func (r *clientRepository) Update(ctx context.Context, id uuid.UUID, client *dom
 		}
 		if len(client.RedirectURIs) > 0 {
 			if err := tx.Create(&client.RedirectURIs).Error; err != nil {
+				return err
+			}
+		}
+		if len(client.Scopes) > 0 {
+			if err := tx.Create(&client.Scopes).Error; err != nil {
+				return err
+			}
+		}
+		if len(client.Audiences) > 0 {
+			if err := tx.Create(&client.Audiences).Error; err != nil {
+				return err
+			}
+		}
+		if len(client.AccessContexts) > 0 {
+			if err := tx.Create(&client.AccessContexts).Error; err != nil {
 				return err
 			}
 		}

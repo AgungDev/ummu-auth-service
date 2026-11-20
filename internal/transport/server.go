@@ -60,8 +60,10 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to get database connection pool: %w", err)
 	}
 
-	if err := seederpkg.SeedDummyData(db); err != nil {
-		return nil, fmt.Errorf("failed to seed database: %w", err)
+	if cfg.AppConfig.Environment == "development" {
+		if err := seederpkg.SeedDummyData(db); err != nil {
+			return nil, fmt.Errorf("failed to seed development data: %w", err)
+		}
 	}
 
 	// Initialize repositories
@@ -140,7 +142,7 @@ func (s *Server) initRoutes() {
 	healthCtrl.Route(rg)
 
 	// Authentication endpoints
-	authUsecase := usecases.NewAuthUsecase(s.userUsecase, s.clientUsecase, s.permissionUsecase, s.tokenUsecase, s.securityService, s.logger, s.cfg.JWTConfig.Issuer, 15, 24)
+	authUsecase := usecases.NewAuthUsecase(s.userUsecase, s.clientUsecase, s.roleUsecase, s.permissionUsecase, s.tokenUsecase, s.securityService, s.logger, s.cfg.JWTConfig.Issuer, 15, 24)
 	authCtrl := controllersAPI.NewAuthController(
 		authUsecase,
 		s.securityService,
@@ -155,6 +157,8 @@ func (s *Server) initRoutes() {
 	// Protected resources
 	protected := rg.Group("")
 	protected.Use(middleware_http.AuthMiddleware(s.securityService, s.logger))
+	protected.Use(middleware_http.RequireAudience("auth-service"))
+	protected.Use(middleware_http.RequirePrincipalType("user"))
 	userCtrl := controllersAPI.NewUserController(s.userUsecase, s.logger)
 	userCtrl.Route(protected)
 
@@ -169,16 +173,12 @@ func (s *Server) initRoutes() {
 
 	// OAuth endpoints remain open for token exchange
 	tokenCtrlConfig := controllersAPI.TokenControllerConfig{
-		AppName:               s.cfg.AppConfig.Name,
 		Issuer:                s.cfg.JWTConfig.Issuer,
 		AllowedAudiences:      s.cfg.JWTConfig.AllowedAudiences,
 		AccessTokenTTLMinutes: 15,
 	}
 	tokenCtrl := controllersAPI.NewTokenController(
-		s.userUsecase,
 		s.clientUsecase,
-		s.tokenUsecase,
-		s.permissionUsecase,
 		s.securityService,
 		tokenCtrlConfig,
 		s.logger,

@@ -34,16 +34,16 @@ func TestResourceJWTAndJWKSShareSigningKeyID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tokenString, err := GenerateResourceJWTRS256(
-		"client-subject",
-		"https://auth.example.test",
-		"siak-legacy-api",
-		"siak:academic:read",
-		nil,
-		privatePath,
-		"auth-key-1",
-		15,
-	)
+	tokenString, err := GenerateSignedJWT(Claims{
+		PrincipalType: "client",
+		ClientID:      "550e8400-e29b-41d4-a716-446655440000",
+		Scope:         "student:read",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:   "https://auth.example.test",
+			Subject:  "550e8400-e29b-41d4-a716-446655440000",
+			Audience: jwt.ClaimStrings{"siak-legacy-api"},
+		},
+	}, privatePath, "auth-key-1", 15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +63,29 @@ func TestResourceJWTAndJWKSShareSigningKeyID(t *testing.T) {
 		}
 	}
 	if tokenClaims.Issuer != "https://auth.example.test" ||
-		tokenClaims.Subject != "client-subject" ||
+		tokenClaims.Subject != "550e8400-e29b-41d4-a716-446655440000" ||
 		!audienceMatches ||
-		tokenClaims.Scope != "siak:academic:read" {
+		tokenClaims.Scope != "student:read" ||
+		tokenClaims.PrincipalType != "client" ||
+		tokenClaims.ClientID != "550e8400-e29b-41d4-a716-446655440000" ||
+		tokenClaims.ID == "" {
 		t.Fatalf("unexpected resource token claims: %+v", tokenClaims)
+	}
+	if _, err := ValidateJWTRS256(
+		tokenString,
+		publicPath,
+		"https://auth.example.test",
+		[]string{"siak-legacy-api"},
+	); err != nil {
+		t.Fatalf("ValidateJWTRS256() error = %v", err)
+	}
+	if _, err := ValidateJWTRS256(
+		tokenString,
+		publicPath,
+		"https://auth.example.test",
+		[]string{"profile-service"},
+	); err == nil {
+		t.Fatal("ValidateJWTRS256() accepted an unconfigured audience")
 	}
 
 	jwks, err := PublicJWKS(publicPath, "auth-key-1")

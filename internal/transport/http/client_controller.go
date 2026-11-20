@@ -28,11 +28,11 @@ func NewClientController(clientUsecase usecases.ClientUsecaseInterface, logger l
 func (c *clientController) Route(rg *gin.RouterGroup) {
 	clientGroup := rg.Group("/clients")
 	{
-		clientGroup.POST("", c.Create)
-		clientGroup.GET("/:id", c.GetByID)
-		clientGroup.GET("", c.GetAll)
-		clientGroup.PUT("/:id", c.Update)
-		clientGroup.DELETE("/:id", c.Delete)
+		clientGroup.POST("", middleware.RequirePermission("system.client:manage"), c.Create)
+		clientGroup.GET("/:id", middleware.RequirePermission("system.client:manage"), c.GetByID)
+		clientGroup.GET("", middleware.RequirePermission("system.client:manage"), c.GetAll)
+		clientGroup.PUT("/:id", middleware.RequirePermission("system.client:manage"), c.Update)
+		clientGroup.DELETE("/:id", middleware.RequirePermission("system.client:manage"), c.Delete)
 	}
 }
 
@@ -59,24 +59,7 @@ func (c *clientController) Create(ctx *gin.Context) {
 		return
 	}
 
-	// convert related structs to string slices
-	var redirectURIs []string
-	for _, r := range client.RedirectURIs {
-		redirectURIs = append(redirectURIs, r.RedirectURI)
-	}
-	var grants []string
-	for _, g := range client.Grants {
-		grants = append(grants, g.GrantType)
-	}
-
-	resp := dto.ClientResponse{
-		ID:             client.ID.String(),
-		ClientID:       client.ClientID,
-		Name:           client.Name,
-		RedirectURIs:   redirectURIs,
-		Grants:         grants,
-		IsConfidential: client.IsConfidential,
-	}
+	resp := clientResponse(client)
 
 	ctx.JSON(http.StatusCreated, gin.H{
 		"message": "Client created successfully",
@@ -106,23 +89,7 @@ func (c *clientController) GetByID(ctx *gin.Context) {
 		return
 	}
 
-	var redirectURIs []string
-	for _, r := range client.RedirectURIs {
-		redirectURIs = append(redirectURIs, r.RedirectURI)
-	}
-	var grants []string
-	for _, g := range client.Grants {
-		grants = append(grants, g.GrantType)
-	}
-
-	resp := dto.ClientResponse{
-		ID:             client.ID.String(),
-		ClientID:       client.ClientID,
-		Name:           client.Name,
-		RedirectURIs:   redirectURIs,
-		Grants:         grants,
-		IsConfidential: client.IsConfidential,
-	}
+	resp := clientResponse(client)
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "Client retrieved successfully",
@@ -141,24 +108,9 @@ func (c *clientController) GetAll(ctx *gin.Context) {
 		return
 	}
 
-	var responses []dto.ClientResponse
+	responses := make([]dto.ClientResponse, 0, len(clients))
 	for _, client := range clients {
-		var redirectURIs []string
-		for _, r := range client.RedirectURIs {
-			redirectURIs = append(redirectURIs, r.RedirectURI)
-		}
-		var grants []string
-		for _, g := range client.Grants {
-			grants = append(grants, g.GrantType)
-		}
-		responses = append(responses, dto.ClientResponse{
-			ID:             client.ID.String(),
-			ClientID:       client.ClientID,
-			Name:           client.Name,
-			RedirectURIs:   redirectURIs,
-			Grants:         grants,
-			IsConfidential: client.IsConfidential,
-		})
+		responses = append(responses, clientResponse(&client))
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
@@ -225,4 +177,37 @@ func (c *clientController) Delete(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "Client deleted successfully",
 	})
+}
+
+func clientResponse(client *domain.Client) dto.ClientResponse {
+	response := dto.ClientResponse{
+		ID:             client.ID.String(),
+		Name:           client.Name,
+		IsConfidential: client.IsConfidential,
+		Status:         client.Status,
+		RedirectURIs:   make([]string, 0, len(client.RedirectURIs)),
+		Grants:         make([]string, 0, len(client.Grants)),
+		Scopes:         make([]string, 0, len(client.Scopes)),
+		Audiences:      make([]string, 0, len(client.Audiences)),
+		AccessContexts: make([]dto.ClientAccessContextRequest, 0, len(client.AccessContexts)),
+	}
+	for _, redirectURI := range client.RedirectURIs {
+		response.RedirectURIs = append(response.RedirectURIs, redirectURI.RedirectURI)
+	}
+	for _, grant := range client.Grants {
+		response.Grants = append(response.Grants, grant.GrantType)
+	}
+	for _, scope := range client.Scopes {
+		response.Scopes = append(response.Scopes, scope.Scope)
+	}
+	for _, audience := range client.Audiences {
+		response.Audiences = append(response.Audiences, audience.Audience)
+	}
+	for _, accessContext := range client.AccessContexts {
+		response.AccessContexts = append(response.AccessContexts, dto.ClientAccessContextRequest{
+			ScopeType: accessContext.ScopeType,
+			ScopeID:   accessContext.ScopeID,
+		})
+	}
+	return response
 }

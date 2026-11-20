@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"time"
 
 	"auth_service/internal/domain"
 	"github.com/google/uuid"
@@ -20,7 +21,10 @@ type UserRepositoryInterface interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	AssignRoles(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error
 	ReplaceRoles(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error
+	AssignRoleAssignments(ctx context.Context, userID uuid.UUID, assignments []domain.RoleAssignmentInput) error
+	ReplaceRoleAssignments(ctx context.Context, userID uuid.UUID, assignments []domain.RoleAssignmentInput) error
 	GetRolesByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Role, error)
+	GetRoleAssignmentsByUserID(ctx context.Context, userID uuid.UUID) ([]domain.UserRoleAssignment, error)
 	RemoveRole(ctx context.Context, userID uuid.UUID, roleID uuid.UUID) error
 	AssignPermissions(ctx context.Context, userID uuid.UUID, permissionIDs []uuid.UUID) error
 	ReplacePermissions(ctx context.Context, userID uuid.UUID, permissionIDs []uuid.UUID) error
@@ -32,7 +36,6 @@ type UserRepositoryInterface interface {
 type ClientRepositoryInterface interface {
 	Create(ctx context.Context, client *domain.Client) error
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Client, error)
-	FindByClientID(ctx context.Context, clientID string) (*domain.Client, error)
 	FindAll(ctx context.Context) ([]domain.Client, error)
 	Update(ctx context.Context, id uuid.UUID, client *domain.Client) error
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -72,6 +75,7 @@ type TokenRepositoryInterface interface {
 	FindByRefreshTokenHash(ctx context.Context, refreshTokenHash string) (*domain.Token, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*domain.Token, error)
 	Update(ctx context.Context, id uuid.UUID, token *domain.Token) error
+	Rotate(ctx context.Context, id uuid.UUID, oldHash, newHash string, expiresAt time.Time) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
 }

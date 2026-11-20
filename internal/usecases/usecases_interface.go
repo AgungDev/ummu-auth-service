@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"time"
 
 	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
@@ -20,7 +21,10 @@ type UserUsecaseInterface interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	AssignRoles(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error
 	ReplaceRoles(ctx context.Context, userID uuid.UUID, roleIDs []uuid.UUID) error
+	AssignRoleAssignments(ctx context.Context, userID uuid.UUID, assignments []domain.RoleAssignmentInput) error
+	ReplaceRoleAssignments(ctx context.Context, userID uuid.UUID, assignments []domain.RoleAssignmentInput) error
 	GetRolesByUserID(ctx context.Context, userID uuid.UUID) ([]domain.Role, error)
+	GetRoleAssignmentsByUserID(ctx context.Context, userID uuid.UUID) ([]domain.UserRoleAssignment, error)
 	RemoveRole(ctx context.Context, userID uuid.UUID, roleID uuid.UUID) error
 	AssignPermissions(ctx context.Context, userID uuid.UUID, permissionIDs []uuid.UUID) error
 	ReplacePermissions(ctx context.Context, userID uuid.UUID, permissionIDs []uuid.UUID) error
@@ -36,7 +40,7 @@ type AuthUsecaseInterface interface {
 	Refresh(ctx context.Context, req dto.RefreshTokenRequest) (*dto.TokenResponse, error)
 	Introspect(ctx context.Context, token string) (*dto.IntrospectResponse, error)
 	GetPermissionsByUserID(ctx context.Context, userID uuid.UUID) ([]string, error)
-	Authorize(ctx context.Context, subject string, roles []interface{}, req dto.AuthorizeRequest) (*dto.AuthorizeResponse, error)
+	Authorize(ctx context.Context, subject string, req dto.AuthorizeRequest) (*dto.AuthorizeResponse, error)
 	Logout(ctx context.Context, userID uuid.UUID) error
 	GetUserProfile(ctx context.Context, userID uuid.UUID) (*dto.UserResponse, error)
 	CheckPermission(ctx context.Context, subject string, permission string) (bool, error)
@@ -46,7 +50,6 @@ type AuthUsecaseInterface interface {
 type ClientUsecaseInterface interface {
 	Create(ctx context.Context, req dto.ClientRequest) (*domain.Client, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Client, error)
-	GetByClientID(ctx context.Context, clientID string) (*domain.Client, error)
 	GetAll(ctx context.Context) ([]domain.Client, error)
 	Update(ctx context.Context, id uuid.UUID, req dto.ClientRequest) error
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -84,6 +87,7 @@ type TokenUsecaseInterface interface {
 	GetByRefreshTokenHash(ctx context.Context, refreshTokenHash string) (*domain.Token, error)
 	GetByUserID(ctx context.Context, userID uuid.UUID) (*domain.Token, error)
 	Update(ctx context.Context, id uuid.UUID, token *domain.Token) error
+	Rotate(ctx context.Context, id uuid.UUID, oldHash, newHash string, expiresAt time.Time) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
 	IsTokenExpired(token *domain.Token) bool

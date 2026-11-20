@@ -28,15 +28,15 @@ func NewRoleController(roleUsecase usecases.RoleUsecaseInterface, logger loggerp
 func (c *roleController) Route(rg *gin.RouterGroup) {
 	roleGroup := rg.Group("/roles")
 	{
-		roleGroup.POST("", c.Create)
-		roleGroup.GET("/:id", c.GetByID)
-		roleGroup.GET("", c.GetAll)
-		roleGroup.PUT("/:id", c.Update)
-		roleGroup.DELETE("/:id", c.Delete)
-		roleGroup.POST("/:id/permissions", c.AssignPermissions)
-		roleGroup.PUT("/:id/permissions", c.ReplacePermissions)
-		roleGroup.GET("/:id/permissions", c.GetPermissions)
-		roleGroup.DELETE("/:id/permissions/:permissionId", c.RemovePermission)
+		roleGroup.POST("", middleware.RequirePermission("system.role:manage"), c.Create)
+		roleGroup.GET("/:id", middleware.RequirePermission("system.role:read"), c.GetByID)
+		roleGroup.GET("", middleware.RequirePermission("system.role:read"), c.GetAll)
+		roleGroup.PUT("/:id", middleware.RequirePermission("system.role:manage"), c.Update)
+		roleGroup.DELETE("/:id", middleware.RequirePermission("system.role:manage"), c.Delete)
+		roleGroup.POST("/:id/permissions", middleware.RequirePermission("system.role:manage"), c.AssignPermissions)
+		roleGroup.PUT("/:id/permissions", middleware.RequirePermission("system.role:manage"), c.ReplacePermissions)
+		roleGroup.GET("/:id/permissions", middleware.RequirePermission("system.role:read"), c.GetPermissions)
+		roleGroup.DELETE("/:id/permissions/:permissionId", middleware.RequirePermission("system.role:manage"), c.RemovePermission)
 	}
 }
 

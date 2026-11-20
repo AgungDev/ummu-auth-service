@@ -134,7 +134,6 @@ Login sukses menggunakan envelope API berikut:
       "id": "<UUID>",
       "username": "<username>",
       "email": "<email>",
-      "full_name": "<nama>",
       "status": "active"
     }
   }

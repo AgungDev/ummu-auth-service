@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"auth_service/internal/domain"
 	"auth_service/internal/domain/dto"
 	"auth_service/internal/security"
+	"auth_service/pkg"
 	loggerpkg "auth_service/pkg/logger"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -21,6 +25,7 @@ var (
 type authUsecase struct {
 	userUsecase       UserUsecaseInterface
 	clientUsecase     ClientUsecaseInterface
+	roleUsecase       RoleUsecaseInterface
 	permissionUsecase PermissionUsecaseInterface
 	tokenUsecase      TokenUsecaseInterface
 	security          security.SecurityService
@@ -33,6 +38,7 @@ type authUsecase struct {
 func NewAuthUsecase(
 	userUsecase UserUsecaseInterface,
 	clientUsecase ClientUsecaseInterface,
+	roleUsecase RoleUsecaseInterface,
 	permissionUsecase PermissionUsecaseInterface,
 	tokenUsecase TokenUsecaseInterface,
 	securityService security.SecurityService,
@@ -44,6 +50,7 @@ func NewAuthUsecase(
 	return &authUsecase{
 		userUsecase:       userUsecase,
 		clientUsecase:     clientUsecase,
+		roleUsecase:       roleUsecase,
 		permissionUsecase: permissionUsecase,
 		tokenUsecase:      tokenUsecase,
 		security:          securityService,
@@ -66,7 +73,11 @@ func (uc *authUsecase) Login(ctx context.Context, req dto.UserLoginRequest) (*dt
 
 	var clientID *uuid.UUID
 	if req.ClientID != "" {
-		client, err := uc.clientUsecase.GetByClientID(ctx, req.ClientID)
+		clientUUID, err := uuid.Parse(req.ClientID)
+		if err != nil {
+			return nil, errors.New("invalid client")
+		}
+		client, err := uc.clientUsecase.GetByID(ctx, clientUUID)
 		if err != nil {
 			return nil, err
 		}
@@ -88,14 +99,21 @@ func (uc *authUsecase) LoginWithGoogle(ctx context.Context, identity domain.Goog
 }
 
 func (uc *authUsecase) createLoginResponse(ctx context.Context, user *domain.User, clientID *uuid.UUID) (*dto.AuthLoginResponse, error) {
-	roles := []interface{}{
-		map[string]interface{}{
-			"role":        "user",
-			"permissions": []string{"profile:read"},
-		},
+	roles, permissions, accessContexts, err := uc.profileTokenClaims(ctx, user.ID)
+	if err != nil {
+		return nil, err
 	}
-
-	accessToken, err := uc.security.GenerateJWT(user.ID.String(), uc.appName, roles, uc.accessTokenTTLMin)
+	accessToken, err := uc.security.GenerateToken(pkg.Claims{
+		PrincipalType:  "user",
+		Roles:          roles,
+		Permissions:    permissions,
+		AccessContexts: accessContexts,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:   uc.appName,
+			Subject:  user.ID.String(),
+			Audience: jwt.ClaimStrings{"auth-service", "profile-service"},
+		},
+	}, uc.accessTokenTTLMin)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +122,7 @@ func (uc *authUsecase) createLoginResponse(ctx context.Context, user *domain.Use
 	tokenRecord := &domain.Token{
 		UserID:           user.ID,
 		ClientID:         clientID,
-		RefreshTokenHash: refreshToken,
+		RefreshTokenHash: pkg.HashOpaqueToken(refreshToken),
 		ExpiresAt:        time.Now().Add(time.Duration(uc.refreshTokenTTLHr) * time.Hour),
 	}
 
@@ -121,14 +139,69 @@ func (uc *authUsecase) createLoginResponse(ctx context.Context, user *domain.Use
 			ID:       user.ID.String(),
 			Username: user.Username,
 			Email:    user.Email,
-			FullName: user.FullName,
 			Status:   user.Status,
 		},
 	}, nil
 }
 
+func (uc *authUsecase) profileTokenClaims(ctx context.Context, userID uuid.UUID) ([]string, []string, []pkg.AccessContext, error) {
+	userRoles, err := uc.userUsecase.GetRoleAssignmentsByUserID(ctx, userID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load user roles for access token: %w", err)
+	}
+	rolesSet := make(map[string]struct{}, len(userRoles))
+	accessContexts := make([]pkg.AccessContext, 0, len(userRoles))
+	for _, assignment := range userRoles {
+		rolesSet[assignment.Role.Code] = struct{}{}
+		if assignment.ScopeType == "" || assignment.ScopeType == "none" {
+			continue
+		}
+		var scopeID *string
+		if assignment.ScopeID != "" {
+			id := assignment.ScopeID
+			scopeID = &id
+		}
+		rolePermissions, err := uc.roleUsecase.GetPermissionsByRoleID(ctx, assignment.Role.ID)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("load permissions for role %s: %w", assignment.Role.Code, err)
+		}
+		contextPermissions := make([]string, 0, len(rolePermissions))
+		for _, permission := range rolePermissions {
+			contextPermissions = append(contextPermissions, permission.Code)
+		}
+		sort.Strings(contextPermissions)
+		accessContexts = append(accessContexts, pkg.AccessContext{
+			Role: assignment.Role.Code,
+			Scope: pkg.AccessScope{
+				Type: assignment.ScopeType,
+				ID:   scopeID,
+			},
+			Permissions: contextPermissions,
+		})
+	}
+	roles := make([]string, 0, len(rolesSet))
+	for role := range rolesSet {
+		roles = append(roles, role)
+	}
+	sort.Strings(roles)
+
+	permissions, err := uc.permissionUsecase.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load user permissions for access token: %w", err)
+	}
+	permissionCodes := make([]string, 0, len(permissions))
+	for _, permission := range permissions {
+		if code := strings.TrimSpace(permission.Code); code != "" {
+			permissionCodes = append(permissionCodes, code)
+		}
+	}
+	sort.Strings(permissionCodes)
+	return roles, permissionCodes, accessContexts, nil
+}
+
 func (uc *authUsecase) Refresh(ctx context.Context, req dto.RefreshTokenRequest) (*dto.TokenResponse, error) {
-	tokenRecord, err := uc.tokenUsecase.GetByRefreshTokenHash(ctx, req.RefreshToken)
+	oldTokenHash := pkg.HashOpaqueToken(req.RefreshToken)
+	tokenRecord, err := uc.tokenUsecase.GetByRefreshTokenHash(ctx, oldTokenHash)
 	if err != nil {
 		return nil, err
 	}
@@ -144,23 +217,33 @@ func (uc *authUsecase) Refresh(ctx context.Context, req dto.RefreshTokenRequest)
 		return nil, errors.New("invalid refresh token")
 	}
 
-	roles := []interface{}{
-		map[string]interface{}{
-			"role":        "user",
-			"permissions": []string{"profile:read"},
-		},
+	roles, permissions, accessContexts, err := uc.profileTokenClaims(ctx, user.ID)
+	if err != nil {
+		return nil, err
 	}
-
-	accessToken, err := uc.security.GenerateJWT(user.ID.String(), uc.appName, roles, uc.accessTokenTTLMin)
+	accessToken, err := uc.security.GenerateToken(pkg.Claims{
+		PrincipalType:  "user",
+		Roles:          roles,
+		Permissions:    permissions,
+		AccessContexts: accessContexts,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:   uc.appName,
+			Subject:  user.ID.String(),
+			Audience: jwt.ClaimStrings{"auth-service", "profile-service"},
+		},
+	}, uc.accessTokenTTLMin)
 	if err != nil {
 		return nil, err
 	}
 
 	newRefreshToken := uuid.NewString()
-	tokenRecord.RefreshTokenHash = newRefreshToken
-	tokenRecord.ExpiresAt = time.Now().Add(time.Duration(uc.refreshTokenTTLHr) * time.Hour)
-
-	if err := uc.tokenUsecase.Update(ctx, tokenRecord.ID, tokenRecord); err != nil {
+	if err := uc.tokenUsecase.Rotate(
+		ctx,
+		tokenRecord.ID,
+		oldTokenHash,
+		pkg.HashOpaqueToken(newRefreshToken),
+		time.Now().Add(time.Duration(uc.refreshTokenTTLHr)*time.Hour),
+	); err != nil {
 		return nil, err
 	}
 
@@ -178,29 +261,32 @@ func (uc *authUsecase) Introspect(ctx context.Context, token string) (*dto.Intro
 		return nil, err
 	}
 
-	roles := make([]string, 0, len(claims.Roles))
-	for _, rawRole := range claims.Roles {
-		switch value := rawRole.(type) {
-		case string:
-			roles = append(roles, value)
-		case map[string]interface{}:
-			if roleName, ok := value["role"].(string); ok {
-				roles = append(roles, roleName)
-			}
-		default:
-			roles = append(roles, fmt.Sprintf("%v", value))
-		}
+	accessContexts := make([]dto.AccessContextResponse, 0, len(claims.AccessContexts))
+	for _, accessContext := range claims.AccessContexts {
+		accessContexts = append(accessContexts, dto.AccessContextResponse{
+			Role:        accessContext.Role,
+			Permissions: accessContext.Permissions,
+			Scope: dto.AccessScopeResponse{
+				Type: accessContext.Scope.Type,
+				ID:   accessContext.Scope.ID,
+			},
+		})
 	}
 
 	return &dto.IntrospectResponse{
-		Active:      true,
-		User:        map[string]string{"sub": claims.Subject, "iss": claims.Issuer},
-		Roles:       roles,
-		Permissions: []string{},
+		Active:         true,
+		User:           map[string]string{"sub": claims.Subject, "iss": claims.Issuer},
+		PrincipalType:  claims.PrincipalType,
+		Subject:        claims.Subject,
+		ClientID:       claims.ClientID,
+		Scope:          claims.Scope,
+		Roles:          claims.Roles,
+		Permissions:    claims.Permissions,
+		AccessContexts: accessContexts,
 	}, nil
 }
 
-func (uc *authUsecase) Authorize(ctx context.Context, subject string, roles []interface{}, req dto.AuthorizeRequest) (*dto.AuthorizeResponse, error) {
+func (uc *authUsecase) Authorize(ctx context.Context, subject string, req dto.AuthorizeRequest) (*dto.AuthorizeResponse, error) {
 	uc.logger.Info("", "", req.UserID, fmt.Sprintf("authorize request: user_id=%s, permission=%s", req.UserID, req.Permission))
 
 	if req.UserID != subject {
@@ -293,7 +379,6 @@ func (uc *authUsecase) GetUserProfile(ctx context.Context, userID uuid.UUID) (*d
 		ID:       user.ID.String(),
 		Username: user.Username,
 		Email:    user.Email,
-		FullName: user.FullName,
 		Status:   user.Status,
 	}, nil
 }
@@ -316,23 +401,4 @@ func (uc *authUsecase) CheckPermission(ctx context.Context, subject string, perm
 	}
 
 	return false, nil
-}
-
-func hasPermission(roles []interface{}, permission string) bool {
-	for _, rawRole := range roles {
-		if roleMap, ok := rawRole.(map[string]interface{}); ok {
-			if roleName, ok := roleMap["role"].(string); ok && roleName == "admin" {
-				return true
-			}
-
-			if permissions, ok := roleMap["permissions"].([]interface{}); ok {
-				for _, rawPermission := range permissions {
-					if fmt.Sprintf("%v", rawPermission) == permission {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
 }
